@@ -89,66 +89,71 @@ async function enhanceSearchPage() {
   console.log('=== Idealista Helper: Enhancement complete ===');
 }
 
-// Fetch energy data from detail pages
+// Fetch energy data from detail pages (first 3 visible only)
 async function fetchEnergyDataForListings(listingsData, preferences) {
-  console.log('=== Fetching energy data for listings ===');
+  console.log('=== Fetching energy data for first 3 visible listings ===');
   
   // Check cache first
   const cachedEnergy = await getEnergyCache();
   let fetchCount = 0;
-  const maxFetches = 10; // Limit concurrent fetches to avoid overwhelming
+  const maxFetches = 3; // Only auto-fetch first 3 visible listings
   
-  for (const data of listingsData) {
+  // Filter to visible listings only (not hidden by filters)
+  const visibleListings = listingsData.filter(data => 
+    data.element && data.element.style.display !== 'none'
+  );
+  
+  for (const data of visibleListings) {
     if (!data.id) continue;
     
-    // Check if we have cached energy data
+    // Check if we have cached data
     if (cachedEnergy[data.id]) {
-      data.energyRating = cachedEnergy[data.id].energyRating;
-      console.log(`[CACHE] ${data.id}: energy ${data.energyRating}`);
-      updateListingBadge(data);
+      const cached = cachedEnergy[data.id];
+      data.energyRating = cached.energyRating;
+      data.ownerType = cached.advertiserType || data.ownerType;
+      console.log(`[CACHE] ${data.id}: energy ${data.energyRating}, owner ${data.ownerType}`);
+      updateListingWithDetailData(data.element, cached, preferences);
       continue;
     }
     
-    // Build the detail page URL
-    const detailUrl = `https://www.idealista.com/inmueble/${data.id}/`;
-    
     // Limit fetches per page load
     if (fetchCount >= maxFetches) {
-      console.log(`[FETCH] Skipping ${data.id}, max fetches reached`);
-      continue;
+      console.log(`[FETCH] Reached limit of ${maxFetches}, rest will fetch on hover`);
+      break;
     }
     
     fetchCount++;
     
-    // Fetch in background with delay to avoid rate limiting
-    setTimeout(async () => {
-      try {
-        console.log(`[FETCH] Fetching energy for ${data.id}...`);
-        const response = await fetch(detailUrl);
-        const html = await response.text();
-        
-        // Parse energy from HTML
-        const energyData = parseEnergyFromHTML(html);
-        console.log(`[FETCH] ${data.id}: energy ${energyData.energyRating || 'not found'}`);
-        
-        // Cache the result
-        await cacheEnergyData(data.id, energyData);
-        
-        // Update the listing display
-        data.energyRating = energyData.energyRating;
-        data.energyConsumption = energyData.energyConsumption;
-        data.energyEmissions = energyData.energyEmissions;
-        updateListingBadge(data);
-        
-        // Re-apply filter if needed
-        applyFiltersToListing(data, preferences);
-        updateFilterStats();
-        
-      } catch (err) {
-        console.error(`[FETCH] Error fetching ${data.id}:`, err);
-      }
-    }, fetchCount * 500); // Stagger requests by 500ms
+    // Build the detail page URL
+    const detailUrl = `https://www.idealista.com/inmueble/${data.id}/`;
+    
+    // Fetch with delay to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    try {
+      console.log(`[FETCH] Auto-fetching #${data.id} (${fetchCount}/${maxFetches})...`);
+      const response = await fetch(detailUrl);
+      const html = await response.text();
+      
+      // Parse detail data from HTML
+      const detailData = parseDetailPageHTML(html, data.id);
+      console.log(`[FETCH] ${data.id}: energy ${detailData.energyRating || 'N/A'}, owner ${detailData.advertiserType}`);
+      
+      // Cache the result
+      await cacheEnergyData(data.id, detailData);
+      
+      // Update the listing display
+      updateListingWithDetailData(data.element, detailData, preferences);
+      data.element.dataset.detailFetched = 'true';
+      
+      updateFilterStats();
+      
+    } catch (err) {
+      console.error(`[FETCH] Error fetching ${data.id}:`, err);
+    }
   }
+  
+  console.log(`=== Auto-fetched ${fetchCount} listings, rest on hover ===`);
 }
 
 // Parse energy rating from detail page HTML
