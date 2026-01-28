@@ -331,10 +331,12 @@ function extractPropertyData(listing) {
     ownerType = 'agency';
   } else {
     // Method 2: Check image URLs for "id.pro" pattern (professional images)
+    // Check both <img src> and <source srcset> elements
     const images = listing.querySelectorAll('img[src*="idealista.com"]');
-    const hasProImages = Array.from(images).some(img => 
-      img.src.includes('id.pro.') || img.srcset?.includes('id.pro.')
-    );
+    const sources = listing.querySelectorAll('source[srcset*="idealista.com"]');
+    
+    const hasProImages = Array.from(images).some(img => img.src.includes('id.pro.')) ||
+                         Array.from(sources).some(src => src.srcset.includes('id.pro.'));
     
     // Method 3: Check for agency indicators in the listing
     const hasAgencyLogo = listing.querySelector('.logo-branding, [class*="logo"], .item-logo') !== null;
