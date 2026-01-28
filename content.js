@@ -89,49 +89,49 @@ async function enhanceSearchPage() {
   console.log('=== Idealista Helper: Enhancement complete ===');
 }
 
-// Fetch energy data from detail pages (first 3 visible only)
+// Fetch energy data from detail pages (all listings with progress)
 async function fetchEnergyDataForListings(listingsData, preferences) {
-  console.log('=== Fetching energy data for first 3 visible listings ===');
+  console.log('=== Fetching detailed data for all listings ===');
   
   // Check cache first
   const cachedEnergy = await getEnergyCache();
-  let fetchCount = 0;
-  const maxFetches = 3; // Only auto-fetch first 3 visible listings
   
-  // Filter to visible listings only (not hidden by filters)
-  const visibleListings = listingsData.filter(data => 
-    data.element && data.element.style.display !== 'none'
-  );
-  
-  for (const data of visibleListings) {
+  // Separate cached vs needs fetch
+  const needsFetch = [];
+  for (const data of listingsData) {
     if (!data.id) continue;
     
-    // Check if we have cached data
     if (cachedEnergy[data.id]) {
       const cached = cachedEnergy[data.id];
       data.energyRating = cached.energyRating;
       data.ownerType = cached.advertiserType || data.ownerType;
       console.log(`[CACHE] ${data.id}: energy ${data.energyRating}, owner ${data.ownerType}`);
       updateListingWithDetailData(data.element, cached, preferences);
-      continue;
+      data.element.dataset.detailFetched = 'true';
+    } else {
+      needsFetch.push(data);
+      // Mark as loading
+      markListingAsLoading(data.element);
     }
-    
-    // Limit fetches per page load
-    if (fetchCount >= maxFetches) {
-      console.log(`[FETCH] Reached limit of ${maxFetches}, rest will fetch on hover`);
-      break;
-    }
-    
-    fetchCount++;
-    
-    // Build the detail page URL
+  }
+  
+  if (needsFetch.length === 0) {
+    console.log('All listings cached, no fetching needed');
+    updateFilterStats();
+    return;
+  }
+  
+  // Show progress in filter stats
+  let fetched = 0;
+  const total = needsFetch.length;
+  updateFetchProgress(fetched, total);
+  
+  // Fetch all sequentially with delay
+  for (const data of needsFetch) {
     const detailUrl = `https://www.idealista.com/inmueble/${data.id}/`;
     
-    // Fetch with delay to avoid rate limiting
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
     try {
-      console.log(`[FETCH] Auto-fetching #${data.id} (${fetchCount}/${maxFetches})...`);
+      console.log(`[FETCH] Fetching #${data.id} (${fetched + 1}/${total})...`);
       const response = await fetch(detailUrl);
       const html = await response.text();
       
@@ -146,14 +146,79 @@ async function fetchEnergyDataForListings(listingsData, preferences) {
       updateListingWithDetailData(data.element, detailData, preferences);
       data.element.dataset.detailFetched = 'true';
       
-      updateFilterStats();
-      
     } catch (err) {
       console.error(`[FETCH] Error fetching ${data.id}:`, err);
+      markListingAsFetchError(data.element);
+    }
+    
+    fetched++;
+    updateFetchProgress(fetched, total);
+    
+    // Delay between requests to avoid rate limiting
+    if (fetched < total) {
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
   
-  console.log(`=== Auto-fetched ${fetchCount} listings, rest on hover ===`);
+  console.log(`=== Fetched ${fetched}/${total} listings ===`);
+  updateFilterStats();
+}
+
+// Mark listing as loading
+function markListingAsLoading(element) {
+  if (!element) return;
+  
+  // Remove existing badge
+  element.querySelectorAll('.idealista-helper-owner-badge').forEach(el => el.remove());
+  
+  const badge = document.createElement('div');
+  badge.className = 'idealista-helper-owner-badge idealista-helper-loading';
+  badge.innerHTML = '⏳ Cargando...';
+  badge.style.cssText = `
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    background: #ff9800;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: bold;
+    z-index: 1000;
+  `;
+  
+  element.style.position = 'relative';
+  element.appendChild(badge);
+}
+
+// Mark listing as fetch error
+function markListingAsFetchError(element) {
+  if (!element) return;
+  
+  const badge = element.querySelector('.idealista-helper-owner-badge');
+  if (badge) {
+    badge.innerHTML = '❌ Error';
+    badge.style.background = '#f44336';
+  }
+}
+
+// Update fetch progress in UI
+function updateFetchProgress(fetched, total) {
+  const statsEl = document.querySelector('#filterStats');
+  if (!statsEl) return;
+  
+  if (fetched < total) {
+    statsEl.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div class="loading-spinner" style="width: 14px; height: 14px; border: 2px solid #ddd; border-top-color: #4CAF50; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+        <span>Obteniendo datos: <strong>${fetched}/${total}</strong></span>
+      </div>
+      <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+    `;
+  } else {
+    // Fetch complete, show normal stats
+    updateFilterStats();
+  }
 }
 
 // Parse energy rating from detail page HTML
