@@ -155,6 +155,21 @@ async function fetchEnergyDataForListings(listingsData, preferences) {
 function parseEnergyFromHTML(html) {
   let energyConsumption = null;
   let energyEmissions = null;
+  let energyStatus = null;
+  
+  // Check for special statuses first
+  if (html.includes('En trámite') || html.includes('en trámite')) {
+    energyStatus = 'tramite';
+  } else if (html.includes('No indicado') || html.includes('no indicado')) {
+    energyStatus = 'no_indicado';
+  } else if (html.includes('Exento') || html.includes('exento')) {
+    energyStatus = 'exento';
+  }
+  
+  // Check for empty icon-energy-c- class (no letter = pending/unknown)
+  if (html.match(/icon-energy-c-["'\s>]/)) {
+    energyStatus = energyStatus || 'tramite';
+  }
   
   // Look for icon-energy-c-X pattern
   const consumptionMatch = html.match(/icon-energy-c-([a-g])/i);
@@ -180,7 +195,12 @@ function parseEnergyFromHTML(html) {
       ? energyConsumption : energyEmissions;
   }
   
-  return { energyConsumption, energyEmissions, energyRating };
+  // If no rating but has status, use status as rating
+  if (!energyRating && energyStatus) {
+    energyRating = energyStatus;
+  }
+  
+  return { energyConsumption, energyEmissions, energyRating, energyStatus };
 }
 
 // Update a listing's badge with new data
@@ -353,6 +373,7 @@ function parseRooms(text) {
 
 // Energy rating order for comparison (A is best = 1, G is worst = 7)
 const ENERGY_RATING_ORDER = { 'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7 };
+const ENERGY_UNKNOWN_STATUSES = ['tramite', 'no_indicado', 'exento', 'N/A', null];
 
 // Apply filters to a single listing
 function applyFiltersToListing(data, preferences) {
@@ -362,11 +383,17 @@ function applyFiltersToListing(data, preferences) {
   
   // Energy rating filter
   if (filters.minEnergyRating && data.energyRating) {
-    const minRatingOrder = ENERGY_RATING_ORDER[filters.minEnergyRating];
-    const listingRatingOrder = ENERGY_RATING_ORDER[data.energyRating];
-    if (listingRatingOrder > minRatingOrder) {
+    // Hide if energy status is unknown/pending (tramite, no_indicado, exento)
+    if (ENERGY_UNKNOWN_STATUSES.includes(data.energyRating)) {
       shouldHide = true;
-      hideReason = `energy ${data.energyRating} > ${filters.minEnergyRating}`;
+      hideReason = `energy unknown (${data.energyRating})`;
+    } else {
+      const minRatingOrder = ENERGY_RATING_ORDER[filters.minEnergyRating];
+      const listingRatingOrder = ENERGY_RATING_ORDER[data.energyRating];
+      if (listingRatingOrder > minRatingOrder) {
+        shouldHide = true;
+        hideReason = `energy ${data.energyRating} > ${filters.minEnergyRating}`;
+      }
     }
   }
   
@@ -401,7 +428,14 @@ function addInfoBadges(data) {
   
   const energyColors = {
     'A': '#00a651', 'B': '#50b848', 'C': '#bdd62e',
-    'D': '#fff200', 'E': '#fdb913', 'F': '#f37021', 'G': '#ed1c24'
+    'D': '#fff200', 'E': '#fdb913', 'F': '#f37021', 'G': '#ed1c24',
+    'tramite': '#ff9800', 'no_indicado': '#607d8b', 'exento': '#9e9e9e'
+  };
+  
+  const energyLabels = {
+    'tramite': 'Trámite',
+    'no_indicado': 'No ind.',
+    'exento': 'Exento'
   };
   
   // Build badge content
@@ -411,7 +445,7 @@ function addInfoBadges(data) {
   }
   
   // Always show energy rating (or N/A if not available)
-  const energyLabel = data.energyRating || 'N/A';
+  const energyLabel = energyLabels[data.energyRating] || data.energyRating || 'N/A';
   const energyColor = energyColors[data.energyRating] || '#999';
   if (badgeContent) badgeContent += ' · ';
   badgeContent += `⚡${energyLabel}`;
