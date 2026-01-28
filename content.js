@@ -283,6 +283,151 @@ async function enhanceListing(listing, preferences) {
       addRedFlagIndicator(listing, flags);
     }
   }
+  
+  // Add hover listener for fetching detailed data
+  addHoverFetchListener(listing, propertyId, preferences);
+}
+
+// Add hover listener to fetch detailed data on demand
+function addHoverFetchListener(listing, propertyId, preferences) {
+  let hoverTimeout = null;
+  let isFetching = false;
+  let hasFetched = listing.dataset.detailFetched === 'true';
+  
+  listing.addEventListener('mouseenter', async () => {
+    if (hasFetched || isFetching) return;
+    
+    // Small delay to avoid fetching on quick mouse passes
+    hoverTimeout = setTimeout(async () => {
+      isFetching = true;
+      
+      // Check cache first
+      const cache = await getEnergyCache();
+      if (cache[propertyId]) {
+        // Use cached data
+        updateListingWithDetailData(listing, cache[propertyId], preferences);
+        hasFetched = true;
+        listing.dataset.detailFetched = 'true';
+        isFetching = false;
+        return;
+      }
+      
+      // Show loading indicator
+      const badge = listing.querySelector('.idealista-helper-owner-badge');
+      if (badge) {
+        badge.innerHTML = '⏳ Cargando...';
+        badge.style.background = '#ff9800';
+      }
+      
+      // Fetch detail page
+      const url = listing.querySelector('a[href*="/inmueble/"]')?.href;
+      if (!url) {
+        isFetching = false;
+        return;
+      }
+      
+      try {
+        const response = await fetch(url);
+        const html = await response.text();
+        const detailData = parseDetailPageHTML(html, propertyId);
+        
+        // Cache the data
+        await cacheEnergyData(propertyId, detailData);
+        
+        // Update the listing
+        updateListingWithDetailData(listing, detailData, preferences);
+        hasFetched = true;
+        listing.dataset.detailFetched = 'true';
+        
+        console.log(`[HOVER] Fetched data for #${propertyId}:`, detailData);
+      } catch (err) {
+        console.error(`[HOVER] Error fetching #${propertyId}:`, err);
+        if (badge) {
+          badge.innerHTML = '❌ Error';
+        }
+      }
+      
+      isFetching = false;
+    }, 300); // 300ms delay before fetching
+  });
+  
+  listing.addEventListener('mouseleave', () => {
+    if (hoverTimeout) {
+      clearTimeout(hoverTimeout);
+      hoverTimeout = null;
+    }
+  });
+}
+
+// Parse detail page HTML for energy and advertiser data
+function parseDetailPageHTML(html, propertyId) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  
+  // Energy rating
+  let energyConsumption = null;
+  let energyEmissions = null;
+  
+  const consumptionEl = doc.querySelector('[class*="icon-energy-c-"]');
+  if (consumptionEl) {
+    const match = consumptionEl.className.match(/icon-energy-c-([a-g])/i);
+    if (match) energyConsumption = match[1].toUpperCase();
+  }
+  
+  const energySpans = doc.querySelectorAll('[class*="icon-energy-c-"]');
+  energySpans.forEach(el => {
+    const match = el.className.match(/icon-energy-c-([a-g])/i);
+    if (match) {
+      if (!energyConsumption) energyConsumption = match[1].toUpperCase();
+      else if (!energyEmissions) energyEmissions = match[1].toUpperCase();
+    }
+  });
+  
+  // Check for special energy statuses
+  let energyStatus = null;
+  const energyText = doc.querySelector('.details-property_features')?.textContent || '';
+  if (energyText.toLowerCase().includes('en trámite')) energyStatus = 'tramite';
+  else if (energyText.toLowerCase().includes('no indicado')) energyStatus = 'no_indicado';
+  else if (energyText.toLowerCase().includes('exento')) energyStatus = 'exento';
+  
+  // Use worse of two ratings
+  const ENERGY_ORDER = { 'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7 };
+  let energyRating = energyStatus || energyConsumption;
+  if (energyConsumption && energyEmissions) {
+    energyRating = ENERGY_ORDER[energyConsumption] >= ENERGY_ORDER[energyEmissions] 
+      ? energyConsumption : energyEmissions;
+  }
+  
+  // Advertiser info
+  const advertiserName = doc.querySelector('.advertiser-name')?.textContent?.trim() ||
+                         doc.querySelector('input[name="user-name"]')?.value?.trim();
+  
+  const professionalNameEl = doc.querySelector('.professional-name .name');
+  const isParticular = professionalNameEl?.textContent?.toLowerCase().includes('particular');
+  const isProfessional = professionalNameEl?.textContent?.toLowerCase().includes('profesional');
+  const advertiserType = isParticular ? 'owner' : (isProfessional ? 'agency' : 'unknown');
+  
+  return {
+    energyRating,
+    energyConsumption,
+    energyEmissions,
+    advertiserName,
+    advertiserType
+  };
+}
+
+// Update listing with fetched detail data
+function updateListingWithDetailData(listing, detailData, preferences) {
+  // Remove old badge
+  listing.querySelectorAll('.idealista-helper-owner-badge').forEach(el => el.remove());
+  
+  // Create updated data object
+  const data = extractPropertyData(listing);
+  data.energyRating = detailData.energyRating || data.energyRating;
+  data.ownerType = detailData.advertiserType || data.ownerType;
+  
+  // Re-apply filters with new data
+  applyFiltersToListing(data, preferences);
 }
 
 // Extract property ID from listing element
