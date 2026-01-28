@@ -320,19 +320,32 @@ function extractPropertyData(listing) {
     if (energyMatch) energyRating = energyMatch[1].toUpperCase();
   }
   
-  // Owner type - check URL pattern (most reliable method)
-  // /pro/ URLs are always agencies, /inmueble/ URLs are typically owners
+  // Owner type detection - multiple methods
+  let ownerType = 'unknown';
+  
+  // Method 1: Check if URL contains /pro/ (always agency)
   const link = listing.querySelector('a[href*="/pro/"], a[href*="/inmueble/"]');
   const linkHref = link?.href || '';
-  let ownerType = 'unknown';
   
   if (linkHref.includes('/pro/')) {
     ownerType = 'agency';
-  } else if (linkHref.includes('/inmueble/')) {
-    // Check for agency indicators in the listing
+  } else {
+    // Method 2: Check image URLs for "id.pro" pattern (professional images)
+    const images = listing.querySelectorAll('img[src*="idealista.com"]');
+    const hasProImages = Array.from(images).some(img => 
+      img.src.includes('id.pro.') || img.srcset?.includes('id.pro.')
+    );
+    
+    // Method 3: Check for agency indicators in the listing
     const hasAgencyLogo = listing.querySelector('.logo-branding, [class*="logo"], .item-logo') !== null;
     const professionalTag = listing.querySelector('[class*="profesional"], [class*="professional"]');
-    ownerType = (hasAgencyLogo || professionalTag) ? 'agency' : 'owner';
+    
+    if (hasProImages || hasAgencyLogo || professionalTag) {
+      ownerType = 'agency';
+    } else if (linkHref.includes('/inmueble/')) {
+      // Only mark as owner if we have /inmueble/ URL and no agency indicators
+      ownerType = 'owner';
+    }
   }
   
   return {
