@@ -539,7 +539,7 @@ function addRedFlagIndicator(listing, flags) {
 }
 
 // Inject custom filters UI
-function injectFiltersUI(preferences) {
+async function injectFiltersUI(preferences) {
   console.log('Injecting custom filters UI...');
   
   // Debug: Find any element we can use as anchor
@@ -557,7 +557,7 @@ function injectFiltersUI(preferences) {
   
   console.log('Using anchor element:', anchorElement?.className || anchorElement?.tagName);
   
-  const customFilters = createCustomFiltersUI(preferences);
+  const customFilters = await createCustomFiltersUI(preferences);
   
   // Insert at the beginning of the anchor
   if (anchorElement && anchorElement !== document.body) {
@@ -577,11 +577,22 @@ function injectFiltersUI(preferences) {
   }
   
   console.log('Filters UI injected successfully');
+  
+  // Auto-apply saved filters after UI is ready
+  const storage = await browser.storage.local.get('savedFilters');
+  if (storage.savedFilters && Object.keys(storage.savedFilters).length > 0) {
+    console.log('Applying saved filters:', storage.savedFilters);
+    setTimeout(() => applyCustomFilters(), 200);
+  }
 }
 
 // Create custom filters UI
-function createCustomFiltersUI(preferences) {
-  const filters = preferences?.filters || {};
+async function createCustomFiltersUI(preferences) {
+  // Load saved filters from storage
+  const storage = await browser.storage.local.get('savedFilters');
+  const savedFilters = storage.savedFilters || {};
+  const filters = { ...preferences?.filters, ...savedFilters };
+  
   const container = document.createElement('div');
   container.className = 'idealista-helper-filters';
   container.innerHTML = `
@@ -638,7 +649,15 @@ function createCustomFiltersUI(preferences) {
     </div>
   `;
   
-  // Add event listeners
+  // Add event listeners - auto-apply on change
+  const autoApply = () => {
+    saveFiltersAndApply();
+  };
+  
+  container.querySelector('#ownerType').addEventListener('change', autoApply);
+  container.querySelector('#minEnergyRating').addEventListener('change', autoApply);
+  container.querySelector('#hideViewed').addEventListener('change', autoApply);
+  container.querySelector('#showRedFlags').addEventListener('change', autoApply);
   container.querySelector('#applyFilters').addEventListener('click', applyCustomFilters);
   
   // Update stats after a short delay
@@ -760,6 +779,11 @@ function displayPropertySummary(data) {
   // Calculate price per m² if we have both
   const pricePerM2 = (data.price && data.size) ? Math.round(data.price / data.size) : null;
   
+  // Advertiser display
+  const advertiserIcon = data.advertiserType === 'particular' ? '👤' : '🏢';
+  const advertiserLabel = data.advertiserType === 'particular' ? 'Particular' : 'Profesional';
+  const advertiserColor = data.advertiserType === 'particular' ? '#2196F3' : '#9c27b0';
+  
   const container = document.createElement('div');
   container.className = 'idealista-helper-summary';
   container.style.cssText = `
@@ -804,6 +828,12 @@ function displayPropertySummary(data) {
         <div style="font-size: 24px; font-weight: bold;">⚡ ${energyRating}</div>
         ${data.energyConsumption && data.energyEmissions ? 
           `<div style="font-size: 10px; opacity: 0.8;">Consumo: ${data.energyConsumption} · Emisiones: ${data.energyEmissions}</div>` : ''}
+      </div>
+      
+      <div style="background: ${advertiserColor}; padding: 12px; border-radius: 8px; text-align: center;">
+        <div style="font-size: 11px; opacity: 0.8; margin-bottom: 4px;">ANUNCIANTE</div>
+        <div style="font-size: 16px; font-weight: bold;">${advertiserIcon} ${advertiserLabel}</div>
+        <div style="font-size: 11px; opacity: 0.9; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${data.advertiserName || ''}">${data.advertiserName || 'N/A'}</div>
       </div>
       
     </div>
@@ -881,6 +911,21 @@ function scrapePropertyDetails() {
   const sizeEl = document.querySelector('.info-data span[class*="size"], .info-features span');
   const size = parseSize(sizeEl?.textContent || document.body.textContent);
   
+  // Advertiser info
+  const advertiserName = document.querySelector('.advertiser-name')?.textContent?.trim() ||
+                         document.querySelector('input[name="user-name"]')?.value?.trim() ||
+                         document.querySelector('.about-advertiser-name')?.textContent?.trim();
+  
+  const advertiserTypeEl = document.querySelector('.professional-name .name');
+  const isParticular = advertiserTypeEl?.textContent?.toLowerCase().includes('particular') ||
+                       document.querySelector('.particular') !== null;
+  const isProfessional = advertiserTypeEl?.textContent?.toLowerCase().includes('profesional') ||
+                         document.querySelector('.about-advertiser-name') !== null;
+  const advertiserType = isParticular ? 'particular' : (isProfessional ? 'profesional' : 'unknown');
+  
+  // Agency link if professional
+  const agencyLink = document.querySelector('.about-advertiser-name')?.href || null;
+  
   const propertyData = {
     id: extractPropertyIdFromURL(),
     url: window.location.href,
@@ -892,7 +937,10 @@ function scrapePropertyDetails() {
     energyConsumption: energyConsumption,
     energyEmissions: energyEmissions,
     description: document.querySelector('.comment p, .adCommentsLanguage')?.textContent?.trim(),
-    photos: photoCount
+    photos: photoCount,
+    advertiserName: advertiserName,
+    advertiserType: advertiserType,
+    agencyLink: agencyLink
   };
   
   console.log('Scraped property data:', propertyData);
