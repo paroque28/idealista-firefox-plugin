@@ -42,6 +42,22 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       handleCheckApiKey(sendResponse);
       return true;
 
+    case 'getProfile':
+      handleGetProfile(sendResponse);
+      return true;
+
+    case 'setProfile':
+      handleSetProfile(message.profile, sendResponse);
+      return true;
+
+    case 'getMemories':
+      handleGetMemories(sendResponse);
+      return true;
+
+    case 'setMemories':
+      handleSetMemories(message.memories, sendResponse);
+      return true;
+
     default:
       console.warn('Unknown action:', message.action);
       sendResponse({ error: 'Unknown action' });
@@ -78,6 +94,50 @@ async function handleCheckApiKey(sendResponse) {
     sendResponse({ hasKey });
   } catch (error) {
     console.error('Error checking API key:', error);
+    sendResponse({ error: error.message });
+  }
+}
+
+// Get user profile
+async function handleGetProfile(sendResponse) {
+  try {
+    const result = await browser.storage.sync.get('userProfile');
+    sendResponse({ profile: result.userProfile || {} });
+  } catch (error) {
+    console.error('Error getting profile:', error);
+    sendResponse({ error: error.message });
+  }
+}
+
+// Save user profile
+async function handleSetProfile(profile, sendResponse) {
+  try {
+    await browser.storage.sync.set({ userProfile: profile });
+    sendResponse({ success: true });
+  } catch (error) {
+    console.error('Error saving profile:', error);
+    sendResponse({ error: error.message });
+  }
+}
+
+// Get memories
+async function handleGetMemories(sendResponse) {
+  try {
+    const result = await browser.storage.sync.get('userMemories');
+    sendResponse({ memories: result.userMemories || [] });
+  } catch (error) {
+    console.error('Error getting memories:', error);
+    sendResponse({ error: error.message });
+  }
+}
+
+// Save memories
+async function handleSetMemories(memories, sendResponse) {
+  try {
+    await browser.storage.sync.set({ userMemories: memories });
+    sendResponse({ success: true });
+  } catch (error) {
+    console.error('Error saving memories:', error);
     sendResponse({ error: error.message });
   }
 }

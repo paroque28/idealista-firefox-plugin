@@ -239,6 +239,137 @@ footer a:hover {
   text-decoration: underline;
 }
 
+/* Profile section */
+.profile-section,
+.memories-section {
+  background: #f8fafc;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.section-description {
+  font-size: 11px;
+  color: #64748b;
+  margin-bottom: 12px;
+}
+
+.profile-field {
+  margin-bottom: 10px;
+}
+
+.profile-field label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: #475569;
+  margin-bottom: 4px;
+}
+
+.profile-field input,
+.profile-field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  font-size: 12px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.profile-field input:focus,
+.profile-field textarea:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
+}
+
+.profile-field textarea {
+  min-height: 40px;
+}
+
+.field-hint {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-top: 4px;
+  font-style: italic;
+}
+
+/* Memories section */
+.memories-list {
+  max-height: 150px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+
+.memory-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.memory-item:last-child {
+  margin-bottom: 0;
+}
+
+.memory-text {
+  flex: 1;
+  color: #334155;
+}
+
+.memory-delete {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.memory-delete:hover {
+  color: #ef4444;
+}
+
+.memories-input {
+  display: flex;
+  gap: 6px;
+}
+
+.memories-input input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.memories-input input:focus {
+  outline: none;
+  border-color: #6366f1;
+}
+
+.memories-input .btn-icon {
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: bold;
+  color: #6366f1;
+}
+
+.no-memories {
+  font-size: 11px;
+  color: #94a3b8;
+  text-align: center;
+  padding: 8px;
+  font-style: italic;
+}
+
 /* Dark mode support */
 @media (prefers-color-scheme: dark) {
   body {
@@ -301,5 +432,36 @@ footer a:hover {
     background: #252525;
     border-color: #3d3d3d;
     color: #707070;
+  }
+
+  .profile-section,
+  .memories-section {
+    background: #3d3d3d;
+    border-color: #4d4d4d;
+  }
+
+  .section-description {
+    color: #94a3b8;
+  }
+
+  .profile-field label {
+    color: #a0a0a0;
+  }
+
+  .profile-field input,
+  .profile-field textarea,
+  .memories-input input {
+    background: #2d2d2d;
+    border-color: #4d4d4d;
+    color: #e0e0e0;
+  }
+
+  .memory-item {
+    background: #2d2d2d;
+    border-color: #4d4d4d;
+  }
+
+  .memory-text {
+    color: #e0e0e0;
   }
 }

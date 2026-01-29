@@ -74,6 +74,72 @@
           <li>Chat with Claude to filter listings!</li>
         </ol>
       </section>
+
+      <section class="profile-section">
+        <h2>Tu Perfil (para mensajes)</h2>
+        <p class="section-description">Esta información ayuda a Claude a escribir mensajes personalizados.</p>
+
+        <div class="profile-field">
+          <label for="profileName">Nombre</label>
+          <input type="text" id="profileName" placeholder="Pablo">
+        </div>
+
+        <div class="profile-field">
+          <label for="profileSituation">Situación</label>
+          <input type="text" id="profileSituation" placeholder="Pareja joven, trabajamos en tech">
+        </div>
+
+        <div class="profile-field">
+          <label for="profileIncome">Ingresos mensuales</label>
+          <input type="text" id="profileIncome" placeholder="5000€ netos">
+        </div>
+
+        <div class="profile-field">
+          <label for="profilePets">Mascotas</label>
+          <input type="text" id="profilePets" placeholder="No tenemos mascotas">
+        </div>
+
+        <div class="profile-field">
+          <label for="profilePreferences">Preferencias de búsqueda</label>
+          <textarea id="profilePreferences" rows="2" placeholder="Piso luminoso, tranquilo, cerca del metro..."></textarea>
+        </div>
+
+        <div class="profile-field">
+          <label for="profileFlexibility">Flexibilidad</label>
+          <textarea id="profileFlexibility" rows="2" placeholder="Podemos entrar a partir del 1 de marzo, flexibles con fecha..."></textarea>
+        </div>
+
+        <div class="profile-field">
+          <label for="profileNotes">Notas adicionales</label>
+          <textarea id="profileNotes" rows="2" placeholder="Cualquier otra información relevante..."></textarea>
+        </div>
+
+        <div class="profile-field">
+          <label for="profileMarketContext">Contexto del mercado (para Claude)</label>
+          <textarea id="profileMarketContext" rows="6" placeholder="Reglas y contexto del mercado inmobiliario..."></textarea>
+          <p class="field-hint">Instrucciones que Claude seguirá al generar mensajes</p>
+        </div>
+
+        <button id="loadDefaultContext" class="btn btn-secondary">
+          Cargar contexto España/Catalunya
+        </button>
+
+        <button id="saveProfile" class="btn btn-primary">
+          Guardar Perfil
+        </button>
+
+        <div id="profileStatus" class="status"></div>
+      </section>
+
+      <section class="memories-section">
+        <h2>Memorias</h2>
+        <p class="section-description">Información que Claude recordará entre sesiones.</p>
+        <div id="memoriesList" class="memories-list"></div>
+        <div class="memories-input">
+          <input type="text" id="newMemory" placeholder="Añadir memoria (ej: Me gusta cocinar)">
+          <button id="addMemory" class="btn-icon" title="Añadir">+</button>
+        </div>
+      </section>
     </main>
 
     <footer>
@@ -81,6 +147,7 @@
     </footer>
   </div>
 
+  <script src="browser-polyfill.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

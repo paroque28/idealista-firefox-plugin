@@ -11,10 +11,14 @@ A Firefox extension that adds an AI-powered assistant to Idealista.com, helping 
 - **Visual Highlighting**: Claude can highlight specific listings on the page
 - **Energy Badges**: See owner type and energy ratings at a glance
 - **Custom Scripts**: Claude can execute JavaScript with your approval for advanced data extraction
+- **User Profile**: Save your personal info to generate personalized contact messages
+- **Reply Assistant**: Get AI-suggested replies in Idealista's messaging system
+- **Memories**: Store persistent information Claude remembers between sessions
+- **Property Analysis**: Auto-generated summaries, pros/cons, and draft messages on property pages
 
 ## Installation
 
-### 1. Install the Extension
+### Firefox
 
 1. Clone the repository:
    ```bash
@@ -26,6 +30,23 @@ A Firefox extension that adds an AI-powered assistant to Idealista.com, helping 
 3. Click **"Load Temporary Add-on"**
 
 4. Select the `manifest.json` file from the cloned directory
+
+### Chrome
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/paroque28/idealista-firefox-plugin.git
+   ```
+
+2. Rename `manifest-chrome.json` to `manifest.json` (backup the original first)
+
+3. Open Chrome and navigate to `chrome://extensions/`
+
+4. Enable **"Developer mode"** (toggle in top-right)
+
+5. Click **"Load unpacked"**
+
+6. Select the cloned directory
 
 ### 2. Get Your Claude API Key
 
@@ -121,16 +142,60 @@ The extension includes safeguards to avoid triggering Idealista's anti-bot detec
 - Small batch sizes (2 requests at a time)
 - Aggressive caching to minimize repeated requests
 
+## User Profile & Memories
+
+### Setting Up Your Profile
+
+1. Click the extension icon in the toolbar
+2. Scroll down to **"Tu Perfil"** section
+3. Fill in your information:
+   - **Name**: Your name for signing messages
+   - **Situation**: Your living situation (couple, single, family...)
+   - **Income**: Monthly income (helps landlords trust you)
+   - **Pets**: Whether you have pets
+   - **Preferences**: What you're looking for in a flat
+   - **Flexibility**: Entry dates, contract length preferences
+4. Click **"Guardar Perfil"**
+
+This information is used to:
+- Generate personalized contact messages on property pages
+- Suggest appropriate replies in conversations
+- Tailor search recommendations
+
+### Memories
+
+Add facts Claude should remember across sessions:
+- "I work from home 3 days a week"
+- "We have a cat"
+- "Maximum commute: 30 minutes to Diagonal"
+
+Memories persist and are included in message generation.
+
+## Conversations Page
+
+When you're on Idealista's messaging page (`/conversations`):
+
+1. A **"Sugerir Respuesta"** widget appears
+2. Select a conversation
+3. Choose your preferred tone (Professional, Friendly, Formal, Brief)
+4. Click **"Generar Respuesta"**
+5. Insert directly or copy to clipboard
+
+The assistant reads the conversation history and uses your profile to generate contextually appropriate replies.
+
 ## File Structure
 
 ```
 idealista-firefox-plugin/
-├── manifest.json      # Extension configuration
-├── content.js         # Chat UI + Claude client + tools
-├── content.css        # Sidebar styling
-├── background.js      # API key management
-├── popup.html/js/css  # API key configuration UI
-└── icons/             # Extension icons
+├── manifest.json        # Firefox extension config
+├── manifest-chrome.json # Chrome extension config
+├── content.js           # Chat UI + Claude client + tools
+├── content.css          # Sidebar styling
+├── background.js        # Firefox background script
+├── background-chrome.js # Chrome service worker
+├── browser-polyfill.js  # Chrome API compatibility
+├── popup.html/js/css    # Settings UI
+└── icons/               # Extension icons
 ```
 
 ## Privacy & Security

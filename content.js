@@ -589,6 +589,12 @@ async function init() {
     return;
   }
 
+  if (pageType === 'conversations') {
+    console.log('Conversations page detected, initializing reply assistant');
+    await initConversationsPage();
+    return;
+  }
+
   if (pageType !== 'search') {
     console.log('Not a search or property page, skipping initialization');
     return;
@@ -666,6 +672,7 @@ function detectPageType() {
   const url = window.location.href;
   if (url.includes('/inmueble/')) return 'property';
   if (url.includes('/alquiler-') || url.includes('/venta-') || url.includes('/multi/')) return 'search';
+  if (url.includes('/conversations') || url.includes('/mensajes') || url.includes('/chat')) return 'conversations';
   return 'unknown';
 }
 
@@ -675,6 +682,8 @@ function detectPageType() {
 
 async function initPropertyDetailPage() {
   await loadApiKey();
+  await loadUserProfile();
+  await loadUserMemories();
 
   if (!apiKey) {
     console.log('[AI] No API key, skipping property detail assistant');
@@ -837,6 +846,9 @@ async function generatePropertyAnalysis(details) {
   const widget = document.getElementById('ai-property-widget');
   if (!widget) return;
 
+  const profileContext = getProfileContext();
+  const userName = userProfile.name || 'Pablo';
+
   const prompt = `Analiza este piso de alquiler en Idealista y proporciona:
 
 DATOS DEL PISO:
@@ -863,20 +875,38 @@ ANUNCIANTE:
 - Tipo: ${details.advertiserType || 'No disponible'}
 - Agencia: ${details.agencyName || 'Particular'}
 
+PERFIL DEL INQUILINO (para personalizar el mensaje):
+${profileContext || 'No hay perfil configurado'}
+
 Por favor responde en JSON con esta estructura exacta:
 {
   "summary": "Resumen de 2-3 frases del piso, destacando lo más importante",
   "pros": ["pro1", "pro2", "pro3"],
   "cons": ["contra1", "contra2", "contra3"],
-  "draftMessage": "Mensaje corto y profesional para contactar al anunciante, mostrando interés genuino y haciendo 1-2 preguntas relevantes sobre el piso. Firma como 'Pablo'. No incluyas datos de contacto, Idealista los añade automáticamente."
+  "draftMessage": "Mensaje persuasivo para contactar al propietario"
 }
+
+ESTRATEGIA PARA EL MENSAJE (draftMessage):
+El objetivo es que el propietario QUIERA alquilarte el piso. Debes:
+
+1. **Generar confianza inmediata**: Menciona tu situación laboral/profesional si está en el perfil
+2. **Cumplir requisitos sin que te lo pidan**: Si el piso no admite mascotas y el perfil dice que no tienes, menciónalo. Si pide nóminas y tienes trabajo estable, dilo.
+3. **Mostrar interés específico**: Haz referencia a algo concreto del piso (la luz, la ubicación, la terraza...) que te guste
+4. **Diferenciarte**: Los propietarios reciben muchos "Hola, me interesa el piso". Sé específico y memorable.
+5. **Facilitar el siguiente paso**: Muestra disponibilidad para visitar o llamar
+
+REGLAS DEL MENSAJE:
+- Máximo 4-5 líneas, conciso pero completo
+- NO suenes desesperado ni robótico
+- SÍ muestra entusiasmo controlado
+- Firma como '${userName}'
+- No incluyas datos de contacto (Idealista los añade)
+- Si el piso tiene algo que coincide con tus preferencias, menciónalo
 
 IMPORTANTE:
 - Los pros/cons deben ser específicos de este piso, no genéricos
-- El mensaje debe ser natural, no robótico
 - Si hay pocos datos, sé honesto sobre las limitaciones
-- Máximo 3-4 pros y 3-4 contras
-- El mensaje NO debe ser muy largo, máximo 4-5 líneas`;
+- Máximo 3-4 pros y 3-4 contras`;
 
   try {
     const response = await fetch(CLAUDE_API_URL, {
@@ -960,6 +990,517 @@ async function loadApiKey() {
     console.log('API key loaded:', apiKey ? 'yes' : 'no');
   } catch (error) {
     console.error('Error loading API key:', error);
+  }
+}
+
+// ============================================================================
+// USER PROFILE & MEMORIES
+// ============================================================================
+
+let userProfile = {};
+let userMemories = [];
+
+async function loadUserProfile() {
+  try {
+    const response = await browser.runtime.sendMessage({ action: 'getProfile' });
+    userProfile = response.profile || {};
+    console.log('[AI] User profile loaded:', Object.keys(userProfile).filter(k => userProfile[k]).length, 'fields');
+  } catch (error) {
+    console.error('Error loading profile:', error);
+  }
+}
+
+async function loadUserMemories() {
+  try {
+    const response = await browser.runtime.sendMessage({ action: 'getMemories' });
+    userMemories = response.memories || [];
+    console.log('[AI] User memories loaded:', userMemories.length, 'memories');
+  } catch (error) {
+    console.error('Error loading memories:', error);
+  }
+}
+
+function getProfileContext() {
+  const parts = [];
+
+  if (userProfile.name) parts.push(`Nombre: ${userProfile.name}`);
+  if (userProfile.situation) parts.push(`Situación: ${userProfile.situation}`);
+  if (userProfile.income) parts.push(`Ingresos: ${userProfile.income}`);
+  if (userProfile.pets) parts.push(`Mascotas: ${userProfile.pets}`);
+  if (userProfile.preferences) parts.push(`Preferencias: ${userProfile.preferences}`);
+  if (userProfile.flexibility) parts.push(`Flexibilidad: ${userProfile.flexibility}`);
+  if (userProfile.notes) parts.push(`Notas: ${userProfile.notes}`);
+
+  if (userMemories.length > 0) {
+    parts.push(`Memorias del usuario: ${userMemories.join('; ')}`);
+  }
+
+  return parts.join('\n');
+}
+
+function getMarketContext() {
+  return userProfile.marketContext || '';
+}
+
+// ============================================================================
+// CONVERSATIONS PAGE
+// ============================================================================
+
+async function initConversationsPage() {
+  await loadApiKey();
+  await loadUserProfile();
+  await loadUserMemories();
+
+  if (!apiKey) {
+    console.log('[AI] No API key, skipping conversations assistant');
+    return;
+  }
+
+  console.log('[AI] Initializing conversations page assistant');
+
+  // Create the reply suggestion widget
+  createConversationsWidget();
+
+  // Watch for conversation changes (SPA navigation)
+  observeConversationChanges();
+
+  // Initial check for active conversation
+  setTimeout(checkForActiveConversation, 1000);
+}
+
+function createConversationsWidget() {
+  // Remove existing widget
+  document.getElementById('ai-reply-widget')?.remove();
+
+  const widget = document.createElement('div');
+  widget.id = 'ai-reply-widget';
+  widget.innerHTML = `
+    <div class="ai-reply-header">
+      <span class="ai-reply-title">🤖 Sugerir Respuesta</span>
+      <button class="ai-reply-toggle" title="Minimizar">−</button>
+    </div>
+    <div class="ai-reply-content">
+      <div class="ai-reply-status">
+        <span class="ai-reply-status-text">Esperando conversación...</span>
+      </div>
+      <div class="ai-reply-options" style="display: none;">
+        <div class="ai-reply-tone">
+          <label>Estilo:</label>
+          <select id="ai-reply-tone-select">
+            <option value="professional">Profesional y confiable</option>
+            <option value="friendly">Cercano y simpático</option>
+            <option value="formal">Muy formal</option>
+            <option value="brief">Directo y breve</option>
+            <option value="enthusiastic">Entusiasta</option>
+          </select>
+        </div>
+        <button class="ai-generate-reply">✨ Generar Respuesta Persuasiva</button>
+      </div>
+      <div class="ai-reply-loading" style="display: none;">
+        <div class="ai-widget-spinner"></div>
+        <span>Generando respuesta...</span>
+      </div>
+      <div class="ai-reply-result" style="display: none;">
+        <div class="ai-suggested-reply"></div>
+        <div class="ai-reply-actions">
+          <button class="ai-copy-reply">📋 Copiar</button>
+          <button class="ai-insert-reply">⬇️ Insertar</button>
+          <button class="ai-regenerate-reply">🔄 Otra</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(widget);
+
+  // Event listeners
+  widget.querySelector('.ai-reply-toggle').addEventListener('click', () => {
+    widget.classList.toggle('minimized');
+    const btn = widget.querySelector('.ai-reply-toggle');
+    btn.textContent = widget.classList.contains('minimized') ? '+' : '−';
+  });
+
+  widget.querySelector('.ai-generate-reply')?.addEventListener('click', generateConversationReply);
+  widget.querySelector('.ai-regenerate-reply')?.addEventListener('click', generateConversationReply);
+
+  widget.querySelector('.ai-copy-reply')?.addEventListener('click', () => {
+    const reply = widget.querySelector('.ai-suggested-reply').textContent;
+    navigator.clipboard.writeText(reply).then(() => {
+      const btn = widget.querySelector('.ai-copy-reply');
+      btn.textContent = '✓ Copiado';
+      setTimeout(() => btn.textContent = '📋 Copiar', 1500);
+    });
+  });
+
+  widget.querySelector('.ai-insert-reply')?.addEventListener('click', () => {
+    const reply = widget.querySelector('.ai-suggested-reply').textContent;
+    insertReplyToTextarea(reply);
+  });
+}
+
+function observeConversationChanges() {
+  // Watch for DOM changes that indicate conversation switch
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+        // Check if a new conversation was loaded
+        const hasNewMessages = Array.from(mutation.addedNodes).some(node =>
+          node.nodeType === 1 && (
+            node.classList?.contains('message') ||
+            node.querySelector?.('.message') ||
+            node.classList?.contains('conversation-detail') ||
+            node.querySelector?.('[class*="message"]')
+          )
+        );
+        if (hasNewMessages) {
+          setTimeout(checkForActiveConversation, 500);
+        }
+      }
+    }
+  });
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+
+  // Also watch for URL changes (SPA navigation)
+  let lastUrl = window.location.href;
+  setInterval(() => {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href;
+      setTimeout(checkForActiveConversation, 500);
+    }
+  }, 500);
+}
+
+function checkForActiveConversation() {
+  const widget = document.getElementById('ai-reply-widget');
+  if (!widget) return;
+
+  // Find conversation messages
+  const conversationContext = extractConversationContext();
+
+  if (conversationContext.messages.length > 0) {
+    // Show options to generate reply
+    widget.querySelector('.ai-reply-status').style.display = 'none';
+    widget.querySelector('.ai-reply-options').style.display = 'block';
+    widget.querySelector('.ai-reply-loading').style.display = 'none';
+
+    console.log('[AI] Active conversation detected:', conversationContext.messages.length, 'messages');
+  } else {
+    widget.querySelector('.ai-reply-status').style.display = 'block';
+    widget.querySelector('.ai-reply-status-text').textContent = 'Selecciona una conversación...';
+    widget.querySelector('.ai-reply-options').style.display = 'none';
+    widget.querySelector('.ai-reply-result').style.display = 'none';
+  }
+}
+
+function extractConversationContext() {
+  const context = {
+    messages: [],
+    propertyInfo: null,
+    otherPartyName: null,
+    propertyDescription: null,
+    propertyRequirements: []
+  };
+
+  // Try multiple selectors for different Idealista layouts
+  const messageSelectors = [
+    '.message-bubble',
+    '.chat-message',
+    '[class*="message-content"]',
+    '.conversation-message',
+    '.msg-text',
+    '[data-testid*="message"]'
+  ];
+
+  let messageElements = [];
+  for (const selector of messageSelectors) {
+    messageElements = document.querySelectorAll(selector);
+    if (messageElements.length > 0) break;
+  }
+
+  // Extract messages
+  messageElements.forEach((el, index) => {
+    const text = el.textContent?.trim();
+    if (text && text.length > 0) {
+      // Determine if sent or received based on classes/position
+      const isSent = el.classList.contains('sent') ||
+                     el.classList.contains('outgoing') ||
+                     el.closest('.sent') ||
+                     el.closest('[class*="outgoing"]') ||
+                     el.closest('[class*="right"]');
+
+      context.messages.push({
+        role: isSent ? 'user' : 'other',
+        content: text,
+        index
+      });
+    }
+  });
+
+  // Try to extract property info from conversation - more comprehensive
+  const propertyCardSelectors = [
+    '.property-card',
+    '[class*="property-info"]',
+    '.ad-card',
+    '[class*="listing"]',
+    '[class*="ad-preview"]',
+    '.item-info',
+    '[class*="conversation-ad"]'
+  ];
+
+  let propertyCard = null;
+  for (const selector of propertyCardSelectors) {
+    propertyCard = document.querySelector(selector);
+    if (propertyCard) break;
+  }
+
+  if (propertyCard) {
+    context.propertyInfo = {
+      title: propertyCard.querySelector('[class*="title"], h3, h4, .item-link')?.textContent?.trim(),
+      price: propertyCard.querySelector('[class*="price"]')?.textContent?.trim(),
+      location: propertyCard.querySelector('[class*="location"], [class*="address"], [class*="subtitle"]')?.textContent?.trim(),
+      size: propertyCard.querySelector('[class*="size"], [class*="area"]')?.textContent?.trim(),
+      rooms: propertyCard.querySelector('[class*="room"], [class*="hab"]')?.textContent?.trim()
+    };
+  }
+
+  // Extract property description from the page or linked listing
+  const descriptionSelectors = [
+    '.ad-description',
+    '[class*="description"]',
+    '.comment p',
+    '[class*="detail-text"]'
+  ];
+
+  for (const selector of descriptionSelectors) {
+    const descEl = document.querySelector(selector);
+    if (descEl?.textContent?.trim()) {
+      context.propertyDescription = descEl.textContent.trim();
+      break;
+    }
+  }
+
+  // Look for property requirements in the conversation or description
+  const fullText = document.body.textContent.toLowerCase();
+  const requirementPatterns = [
+    { pattern: /no\s*(se\s*)?(admiten?|acepta[n]?)\s*mascotas/i, req: 'No admite mascotas' },
+    { pattern: /(admite[n]?|acepta[n]?)\s*mascotas/i, req: 'Admite mascotas' },
+    { pattern: /nómina[s]?/i, req: 'Requiere nóminas' },
+    { pattern: /aval/i, req: 'Requiere aval' },
+    { pattern: /contrato\s*(de\s*)?(\d+)\s*mes/i, req: 'Contrato mínimo' },
+    { pattern: /fianza\s*(\d+)/i, req: 'Fianza requerida' },
+    { pattern: /pareja[s]?/i, req: 'Menciona parejas' },
+    { pattern: /estudiante[s]?/i, req: 'Menciona estudiantes' },
+    { pattern: /profesional/i, req: 'Busca profesionales' },
+    { pattern: /sin\s*niños/i, req: 'Sin niños' },
+    { pattern: /no\s*fumador/i, req: 'No fumadores' }
+  ];
+
+  requirementPatterns.forEach(({ pattern, req }) => {
+    if (pattern.test(fullText)) {
+      context.propertyRequirements.push(req);
+    }
+  });
+
+  // Detect rental type (CRITICAL for legal compliance in Spain/Catalonia)
+  context.rentalType = 'unknown';
+  const urlLower = window.location.href.toLowerCase();
+
+  if (urlLower.includes('temporal') || urlLower.includes('season') ||
+      /temporal|temporada|short.?term|por\s*meses/i.test(fullText)) {
+    context.rentalType = 'temporal';
+  } else if (urlLower.includes('alquiler-vivienda') || urlLower.includes('larga') ||
+             /larga\s*(estancia|temporada|duraci[oó]n)|indefinido|residencia\s*habitual/i.test(fullText)) {
+    context.rentalType = 'larga_estancia';
+  }
+
+  // Detect if in Catalonia (stricter regulations)
+  context.isCatalonia = /barcelona|catalunya|cataluña|tarragona|girona|lleida|sabadell|terrassa|hospitalet|badalona/i.test(fullText) ||
+                        /barcelona|catalunya/i.test(urlLower);
+
+  // Try to get the other party's name
+  const nameSelectors = ['.conversation-header h2', '.chat-header .name', '[class*="participant-name"]', '.advertiser-name', '[class*="user-name"]'];
+  for (const selector of nameSelectors) {
+    const nameEl = document.querySelector(selector);
+    if (nameEl?.textContent?.trim()) {
+      context.otherPartyName = nameEl.textContent.trim();
+      break;
+    }
+  }
+
+  return context;
+}
+
+async function generateConversationReply() {
+  const widget = document.getElementById('ai-reply-widget');
+  if (!widget) return;
+
+  let context = extractConversationContext();
+  const tone = document.getElementById('ai-reply-tone-select')?.value || 'professional';
+
+  // Try to fetch property description if we have a link but no description
+  if (!context.propertyDescription) {
+    const propertyLink = document.querySelector('a[href*="/inmueble/"]');
+    if (propertyLink) {
+      const propertyId = propertyLink.href.match(/inmueble\/(\d+)/)?.[1];
+      if (propertyId && listingDetailsCache[propertyId]?.description) {
+        context.propertyDescription = listingDetailsCache[propertyId].description;
+      } else if (propertyId) {
+        // Quick fetch of property description
+        try {
+          const details = await toolGetListingDetails({ listing_id: propertyId });
+          if (details?.description) {
+            context.propertyDescription = details.description;
+            listingDetailsCache[propertyId] = details;
+          }
+        } catch (e) {
+          console.log('[AI] Could not fetch property details:', e);
+        }
+      }
+    }
+  }
+
+  if (context.messages.length === 0) {
+    widget.querySelector('.ai-reply-status-text').textContent = 'No hay mensajes para analizar';
+    return;
+  }
+
+  // Show loading
+  widget.querySelector('.ai-reply-options').style.display = 'none';
+  widget.querySelector('.ai-reply-loading').style.display = 'flex';
+  widget.querySelector('.ai-reply-result').style.display = 'none';
+
+  // Update loading text based on what we're doing
+  const loadingText = widget.querySelector('.ai-reply-loading span');
+  if (!context.propertyDescription) {
+    loadingText.textContent = 'Analizando conversación y piso...';
+  } else {
+    loadingText.textContent = 'Generando respuesta persuasiva...';
+  }
+
+  const profileContext = getProfileContext();
+  const conversationHistory = context.messages
+    .map(m => `${m.role === 'user' ? 'Yo' : 'Propietario'}: ${m.content}`)
+    .join('\n');
+
+  const marketContext = getMarketContext();
+
+  // Detect rental type for context
+  let rentalTypeHint = '';
+  if (context.rentalType === 'temporal') {
+    rentalTypeHint = 'TIPO DE ALQUILER DETECTADO: TEMPORAL (por meses/temporada)';
+  } else if (context.rentalType === 'larga_estancia') {
+    rentalTypeHint = 'TIPO DE ALQUILER DETECTADO: LARGA ESTANCIA (residencia habitual)';
+  }
+
+  const prompt = `Eres un experto en redactar mensajes persuasivos para alquilar pisos. Tu objetivo es ayudar al usuario a CONVENCER al propietario de que es el inquilino ideal.
+
+${marketContext ? `CONTEXTO DEL MERCADO (instrucciones del usuario):\n${marketContext}\n` : ''}
+${rentalTypeHint}
+
+INFORMACIÓN DEL USUARIO (inquilino):
+${profileContext || 'No hay perfil configurado - asume un perfil profesional y responsable'}
+
+INFORMACIÓN DEL INMUEBLE:
+- Datos básicos: ${context.propertyInfo ? JSON.stringify(context.propertyInfo) : 'No disponible'}
+- Descripción: ${context.propertyDescription || 'No disponible'}
+- Requisitos detectados: ${context.propertyRequirements.length > 0 ? context.propertyRequirements.join(', ') : 'No especificados'}
+- Nombre del propietario: ${context.otherPartyName || 'No disponible'}
+
+CONVERSACIÓN ACTUAL:
+${conversationHistory}
+
+TONO DESEADO: ${tone === 'professional' ? 'Profesional, serio y confiable - transmite estabilidad' : tone === 'friendly' ? 'Cercano y simpático - cae bien desde el primer mensaje' : tone === 'formal' ? 'Muy formal y educado - máximo respeto' : tone === 'enthusiastic' ? 'Entusiasta y positivo - muestra que realmente te encanta el piso' : 'Directo y breve - va al grano sin rodeos'}
+
+ESTRATEGIA DE PERSUASIÓN:
+1. **Cumple las condiciones**: ASUME que el usuario cumple TODAS las condiciones del piso. NO preguntes si las cumple.
+2. **Genera confianza**: Menciona datos que den seguridad al propietario.
+3. **Muestra interés genuino**: Haz referencia a algo específico del piso o la descripción.
+4. **Diferénciate**: Sé específico y memorable, no genérico.
+5. **Facilita el siguiente paso**: Sugiere visita o llamada, muestra disponibilidad.
+
+REGLAS:
+- Responde a lo que preguntó/dijo el propietario
+- Si pide documentación, confirma que la tienes lista
+- ${tone === 'brief' ? 'Máximo 2-3 líneas, directo al grano' : tone === 'enthusiastic' ? 'Puedes ser más expresivo, hasta 6-7 líneas' : 'Largo apropiado, 4-5 líneas'}
+- NO incluir saludos si ya se saludaron
+- NO sonar desesperado ni robótico
+
+Escribe SOLO el mensaje sugerido, sin explicaciones ni comillas.`;
+
+  try {
+    const response = await fetch(CLAUDE_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 500,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('API request failed');
+    }
+
+    const data = await response.json();
+    const suggestedReply = data.content.find(b => b.type === 'text')?.text || '';
+
+    // Show result
+    widget.querySelector('.ai-reply-loading').style.display = 'none';
+    widget.querySelector('.ai-reply-result').style.display = 'block';
+    widget.querySelector('.ai-suggested-reply').textContent = suggestedReply.trim();
+
+  } catch (error) {
+    console.error('[AI] Error generating reply:', error);
+    widget.querySelector('.ai-reply-loading').style.display = 'none';
+    widget.querySelector('.ai-reply-options').style.display = 'block';
+    widget.querySelector('.ai-reply-status').style.display = 'block';
+    widget.querySelector('.ai-reply-status-text').textContent = 'Error al generar. Inténtalo de nuevo.';
+  }
+}
+
+function insertReplyToTextarea(text) {
+  // Try multiple selectors for the message input
+  const textareaSelectors = [
+    'textarea[aria-label*="mensaje"]',
+    'textarea[aria-label*="message"]',
+    'textarea[name*="message"]',
+    'textarea[placeholder*="mensaje"]',
+    'textarea[placeholder*="Escribe"]',
+    '.message-input textarea',
+    '[class*="message-input"] textarea',
+    'textarea'
+  ];
+
+  let textarea = null;
+  for (const selector of textareaSelectors) {
+    textarea = document.querySelector(selector);
+    if (textarea) break;
+  }
+
+  if (textarea) {
+    textarea.value = text;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    textarea.dispatchEvent(new Event('change', { bubbles: true }));
+    textarea.focus();
+
+    // Scroll textarea into view
+    textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    console.log('[AI] Reply inserted into textarea');
+  } else {
+    // Fallback: copy to clipboard
+    navigator.clipboard.writeText(text);
+    console.log('[AI] No textarea found, copied to clipboard');
   }
 }
 
