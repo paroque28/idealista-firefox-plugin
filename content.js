@@ -318,12 +318,38 @@ async function loadApiKey() {
 // ENERGY BADGES
 // ============================================================================
 
-function addEnergyBadgesToListings() {
+// Cache for fetched listing details
+let listingDetailsCache = {};
+
+function loadDetailsCache() {
+  try {
+    const saved = localStorage.getItem(`${STORAGE_KEY}-details-cache`);
+    if (saved) {
+      listingDetailsCache = JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error('Error loading details cache:', e);
+  }
+}
+
+function saveDetailsCache() {
+  try {
+    localStorage.setItem(`${STORAGE_KEY}-details-cache`, JSON.stringify(listingDetailsCache));
+  } catch (e) {
+    console.error('Error saving details cache:', e);
+  }
+}
+
+async function addEnergyBadgesToListings() {
+  loadDetailsCache();
   const listings = findPropertyListings();
 
   for (const listing of listings) {
     addEnergyBadge(listing);
   }
+
+  // Auto-fetch details for listings without energy ratings
+  await fetchMissingEnergyRatings(listings);
 }
 
 function addEnergyBadge(listing) {
@@ -332,11 +358,16 @@ function addEnergyBadge(listing) {
 
   const data = extractPropertyData(listing);
 
+  // Check cache for energy rating
+  const cachedDetails = listingDetailsCache[data.id];
+  const energyRating = cachedDetails?.energyRating || data.energyRating;
+
   // Ensure relative positioning for badge placement
   listing.style.position = 'relative';
 
   const badge = document.createElement('div');
   badge.className = 'idealista-ai-badge';
+  badge.setAttribute('data-listing-id', data.id);
 
   // Owner type
   const ownerIcon = data.ownerType === 'owner' ? '👤' : data.ownerType === 'agency' ? '🏢' : '❓';
@@ -347,8 +378,8 @@ function addEnergyBadge(listing) {
     'A': '#00a651', 'B': '#50b848', 'C': '#bdd62e',
     'D': '#fff200', 'E': '#fdb913', 'F': '#f37021', 'G': '#ed1c24'
   };
-  const energyColor = energyColors[data.energyRating] || '#999';
-  const energyLabel = data.energyRating || 'N/A';
+  const energyColor = energyColors[energyRating] || '#999';
+  const energyLabel = energyRating || '...';
 
   badge.innerHTML = `
     <span class="badge-owner">${ownerIcon} ${ownerLabel}</span>
@@ -356,6 +387,78 @@ function addEnergyBadge(listing) {
   `;
 
   listing.appendChild(badge);
+}
+
+function updateBadgeEnergy(listingId, energyRating) {
+  const badge = document.querySelector(`.idealista-ai-badge[data-listing-id="${listingId}"]`);
+  if (!badge) return;
+
+  const energyColors = {
+    'A': '#00a651', 'B': '#50b848', 'C': '#bdd62e',
+    'D': '#fff200', 'E': '#fdb913', 'F': '#f37021', 'G': '#ed1c24'
+  };
+  const energyColor = energyColors[energyRating] || '#999';
+  const energyLabel = energyRating || 'N/A';
+
+  const energySpan = badge.querySelector('.badge-energy');
+  if (energySpan) {
+    energySpan.style.background = energyColor;
+    energySpan.innerHTML = `⚡${energyLabel}`;
+  }
+}
+
+async function fetchMissingEnergyRatings(listings) {
+  const toFetch = [];
+
+  for (const listing of listings) {
+    const data = extractPropertyData(listing);
+    if (!data.id) continue;
+
+    // Skip if already cached
+    if (listingDetailsCache[data.id]) continue;
+
+    // Skip if already has energy rating from page
+    if (data.energyRating) {
+      listingDetailsCache[data.id] = { energyRating: data.energyRating };
+      continue;
+    }
+
+    toFetch.push({ id: data.id, listing });
+  }
+
+  if (toFetch.length === 0) return;
+
+  console.log(`Fetching energy ratings for ${toFetch.length} listings...`);
+
+  // Fetch in batches with delay to avoid rate limiting
+  const BATCH_SIZE = 3;
+  const DELAY_MS = 500;
+
+  for (let i = 0; i < toFetch.length; i += BATCH_SIZE) {
+    const batch = toFetch.slice(i, i + BATCH_SIZE);
+
+    await Promise.all(batch.map(async ({ id, listing }) => {
+      try {
+        const details = await toolGetListingDetails({ listing_id: id });
+        if (details && !details.error) {
+          listingDetailsCache[id] = details;
+          updateBadgeEnergy(id, details.energyRating);
+        }
+      } catch (error) {
+        console.error(`Error fetching details for ${id}:`, error);
+      }
+    }));
+
+    // Save cache after each batch
+    saveDetailsCache();
+
+    // Delay between batches
+    if (i + BATCH_SIZE < toFetch.length) {
+      await new Promise(resolve => setTimeout(resolve, DELAY_MS));
+    }
+  }
+
+  console.log('Finished fetching energy ratings');
 }
 
 // ============================================================================
