@@ -1,20 +1,33 @@
 # Idealista AI Assistant
 
-A Firefox extension that adds an AI-powered assistant to Idealista.com, helping you find the perfect flat using Claude.
+A Firefox/Chrome extension that adds an AI-powered assistant to Idealista.com, helping you find and rent the perfect flat using Claude.
 
 ## Features
 
+### Search Pages
 - **Chat Sidebar**: Natural language interface to interact with listings
 - **Native Filter Integration**: Apply Idealista's built-in filters across ALL pages via natural language
 - **AI-Powered Filtering**: Claude reads descriptions and filters by subjective criteria (luminoso, tranquilo, reformado...)
 - **Smart Analysis**: Get insights on deals, red flags, and recommendations
 - **Visual Highlighting**: Claude can highlight specific listings on the page
 - **Energy Badges**: See owner type and energy ratings at a glance
-- **Custom Scripts**: Claude can execute JavaScript with your approval for advanced data extraction
-- **User Profile**: Save your personal info to generate personalized contact messages
-- **Reply Assistant**: Get AI-suggested replies in Idealista's messaging system
-- **Memories**: Store persistent information Claude remembers between sessions
-- **Property Analysis**: Auto-generated summaries, pros/cons, and draft messages on property pages
+
+### Property Detail Pages
+- **Auto-Analysis**: Summary, pros/cons generated automatically
+- **Draft Contact Messages**: Personalized messages based on your profile
+- **One-Click Copy**: Insert draft into contact form instantly
+
+### Conversations Page
+- **Reply Assistant**: AI-suggested replies for landlord messages
+- **Two-Pass Generation**: First generates, then humanizes to avoid AI-sounding text
+- **Context-Aware**: Fetches original listing to understand duration, conditions, requirements
+- **Spanish Market Rules**: Understands temporal vs long-term rental regulations
+
+### Profile & Personalization
+- **User Profile**: Save your info for personalized messages
+- **Temporal Reason**: Specific field for demonstrable temporary rental reasons
+- **Market Context**: Customizable rules for Spanish/Catalan rental market
+- **Memories**: Persistent facts Claude remembers between sessions
 
 ## Installation
 
@@ -48,199 +61,203 @@ A Firefox extension that adds an AI-powered assistant to Idealista.com, helping 
 
 6. Select the cloned directory
 
-### 2. Get Your Claude API Key
+### Get Your Claude API Key
 
 1. Go to [console.anthropic.com](https://console.anthropic.com/)
 2. Add credits in **Settings** → **Billing**
 3. Generate an API key in **Settings** → **API Keys**
 4. Copy the key (starts with `sk-ant-api03-...`)
 
-### 3. Configure the Extension
+### Configure the Extension
 
-1. Click the extension icon in the Firefox toolbar
+1. Click the extension icon in the toolbar
 2. Paste your API key
 3. Click **"Save API Key"**
 
 ## Usage
 
+### Search Pages
+
 1. Navigate to any Idealista search page
 2. Click the 🤖 button to open the assistant
 3. Chat naturally with Claude
 
-### Example Commands
+**Example Commands:**
 
-**Native Filters** (apply to ALL pages - recommended for objective criteria):
 ```
 "Busca pisos de máximo 1200€"
 "Quiero mínimo 60m² y 2 habitaciones"
-"Filtra por los que admitan mascotas"
 "Solo pisos con terraza y aire acondicionado"
-"Busca áticos con ascensor"
-"Muestra solo los publicados en las últimas 24 horas"
-"Pisos exteriores en buen estado"
-```
-
-**AI-Powered Filters** (current page only - for subjective criteria):
-```
 "Busca pisos luminosos"
-"Encuentra pisos tranquilos, sin ruido"
-"Muestra solo los reformados recientemente"
-"Quiero pisos con cocina equipada"
-"Busca pisos bien comunicados con metro"
+"Encuentra pisos tranquilos"
+"Solo particulares"
+"¿Cuál es la mejor opción?"
 ```
 
-**Other Commands**:
-```
-"Solo particulares" (hide agencies)
-"¿Cuál es la mejor opción?"
-"Resalta las mejores ofertas"
-"Muestra todo" (reset filters)
-```
+### Property Detail Pages
+
+When you open a listing (`/inmueble/...`), a widget appears automatically with:
+- Summary of the property
+- Pros and cons
+- Draft contact message using your profile
+
+Click **"Copiar al formulario"** to insert the message.
+
+### Conversations Page
+
+When you're on `/conversations`:
+
+1. A **"Sugerir Respuesta"** widget appears (bottom-right)
+2. Select a conversation - the widget shows detected rental type:
+   - 📅 **TEMPORAL** (yellow) - will require specific reason
+   - 🏠 **LARGA ESTANCIA** (green) - will emphasize stability
+3. Choose your preferred tone
+4. Click **"Generar Respuesta Persuasiva"**
+5. Review and insert
+
+**The assistant:**
+- Fetches the original listing to understand duration/conditions
+- Reads the conversation history
+- Doesn't repeat info the landlord already has
+- Doesn't invent false information
+- Generates human-sounding responses (two-pass system)
+
+## User Profile Setup
+
+Click the extension icon and scroll to **"Tu Perfil"**:
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| **Nombre** | Your name for signing | "Pablo y María" |
+| **Situación** | Living/work situation | "Pareja, trabajamos remoto en tech" |
+| **Ingresos** | Monthly income | "5.000€ netos" |
+| **Mascotas** | Pet status | "No tenemos mascotas" |
+| **Preferencias** | What you're looking for | "Piso luminoso, cerca del metro" |
+| **Flexibilidad fechas** | Entry date flexibility | "Podemos entrar en febrero o marzo" |
+| **Razón temporal** | ONLY if you have a real reason | "Proyecto de 6 meses en Barcelona" |
+| **Notas** | Other relevant info | Any other details |
+
+### Market Context (Important for Spain/Catalunya)
+
+Click **"Cargar contexto España/Catalunya"** to load default rules:
+
+- **Okupa fears**: Messages emphasize solvency, stability, references
+- **Temporal rentals**: Requires demonstrable reasons (work project, studies, medical)
+- **Long-term rentals**: Emphasizes wanting a stable home
+- **Never mixes signals**: Won't say "temporal or long-term, whatever"
+
+You can customize this text to match your specific situation.
+
+### Razón Temporal
+
+**Only fill this if you have a REAL, demonstrable reason:**
+- "Proyecto laboral de 6 meses"
+- "Máster en UPC de 10 meses"
+- "Tratamiento médico temporal"
+- "Reforma en mi vivienda habitual"
+
+**Leave empty if you don't have one.** The assistant will use vague but honest language like "establishing in the city for a while" instead of inventing fake projects.
+
+## How Reply Generation Works
+
+1. **Fetch Property**: Loads the original listing page to get full description, duration, conditions
+2. **Detect Rental Type**: Analyzes text for temporal (3-9 months, flexible stay) or long-term indicators
+3. **First Pass**: Generates initial draft following all rules
+4. **Second Pass**: Reviews for:
+   - AI-sounding phrases ("estaría encantado", "documentación lista")
+   - Invented information (fake projects, durations)
+   - Unnecessary repetition of already-shared info
+   - Excessive length
+5. **Humanizes**: Rewrites to sound like a real person
 
 ## Filter Strategy
 
-The assistant uses three types of filtering:
-
 | Type | Scope | Best For |
 |------|-------|----------|
-| **Native Filters** (`set_search_filters`) | ALL pages | Price, size, rooms, bathrooms, amenities, condition, floor level, publication date |
-| **Smart Filters** (`filter_listings` with `smart_filter`) | ALL pages* | AI-powered subjective criteria (luminoso, tranquilo, reformado) |
-| **Basic Filters** (`filter_listings`) | Current page only | Owner type, energy certificates |
+| **Native Filters** | ALL pages | Price, size, rooms, amenities, condition |
+| **Smart Filters** | ALL pages* | AI subjective criteria (luminoso, tranquilo) |
+| **Basic Filters** | Current page | Owner type, energy certificates |
 
-*Smart filters store keywords (not listing IDs), so they're automatically re-applied when you navigate to another page.
-
-### How Smart Filters Work
-
-When you ask for subjective criteria like "pisos luminosos":
-1. Claude reads descriptions and identifies relevant keywords (luminoso, luz natural, soleado, etc.)
-2. These keywords are stored and used to filter listings on ANY page
-3. On page navigation, descriptions are fetched and filtered automatically
-
-Claude automatically chooses the best approach based on your request.
-
-## Tools Available to Claude
-
-| Tool | Description |
-|------|-------------|
-| `set_search_filters` | Apply native Idealista filters (affects ALL pages) |
-| `filter_listings` | Show/hide listings on current page |
-| `get_listings` | Get all listings with price, size, rooms, etc. |
-| `get_listing_details` | Fetch detailed info from a listing page |
-| `get_all_listings_details` | Fetch descriptions for AI filtering (rate-limited) |
-| `highlight_listings` | Add visual glow to specific listings |
-| `open_listing` | Open a listing in a new tab |
-| `show_all_listings` | Reset filters and show everything |
-| `get_page_summary` | Get statistics about the current page |
-| `execute_page_script` | Run custom JS with user approval |
-| Pagination tools | Navigate between pages |
-
-## Anti-Bot Protection
-
-The extension includes safeguards to avoid triggering Idealista's anti-bot detection:
-- Rate limiting: Max 15 listings fetched at once by default
-- Random delays between requests (800-1500ms)
-- Small batch sizes (2 requests at a time)
-- Aggressive caching to minimize repeated requests
-
-## User Profile & Memories
-
-### Setting Up Your Profile
-
-1. Click the extension icon in the toolbar
-2. Scroll down to **"Tu Perfil"** section
-3. Fill in your information:
-   - **Name**: Your name for signing messages
-   - **Situation**: Your living situation (couple, single, family...)
-   - **Income**: Monthly income (helps landlords trust you)
-   - **Pets**: Whether you have pets
-   - **Preferences**: What you're looking for in a flat
-   - **Flexibility**: Entry dates, contract length preferences
-4. Click **"Guardar Perfil"**
-
-This information is used to:
-- Generate personalized contact messages on property pages
-- Suggest appropriate replies in conversations
-- Tailor search recommendations
-
-### Memories
-
-Add facts Claude should remember across sessions:
-- "I work from home 3 days a week"
-- "We have a cat"
-- "Maximum commute: 30 minutes to Diagonal"
-
-Memories persist and are included in message generation.
-
-## Conversations Page
-
-When you're on Idealista's messaging page (`/conversations`):
-
-1. A **"Sugerir Respuesta"** widget appears
-2. Select a conversation
-3. Choose your preferred tone (Professional, Friendly, Formal, Brief)
-4. Click **"Generar Respuesta"**
-5. Insert directly or copy to clipboard
-
-The assistant reads the conversation history and uses your profile to generate contextually appropriate replies.
+*Smart filters store keywords, automatically re-applied on navigation.
 
 ## File Structure
 
 ```
 idealista-firefox-plugin/
-├── manifest.json        # Firefox extension config
-├── manifest-chrome.json # Chrome extension config
-├── content.js           # Chat UI + Claude client + tools
-├── content.css          # Sidebar styling
-├── background.js        # Firefox background script
-├── background-chrome.js # Chrome service worker
-├── browser-polyfill.js  # Chrome API compatibility
-├── popup.html/js/css    # Settings UI
-└── icons/               # Extension icons
+├── manifest.json          # Firefox extension config
+├── manifest-chrome.json   # Chrome extension config (Manifest V3)
+├── content.js             # Main logic: chat, tools, conversations
+├── content.css            # All styling
+├── background.js          # Firefox background script
+├── background-chrome.js   # Chrome service worker
+├── browser-polyfill.js    # Chrome API compatibility layer
+├── popup.html             # Settings popup UI
+├── popup.js               # Settings logic
+├── popup.css              # Settings styling
+└── icons/                 # Extension icons
 ```
 
 ## Privacy & Security
 
-- Your API key is stored locally in Firefox's sync storage
-- API calls go directly from your browser to Anthropic's servers
-- No data is sent to any third-party servers
-- Script execution requires explicit user approval
+- API key stored locally in browser sync storage
+- API calls go directly to Anthropic (no middleman)
+- No data sent to third-party servers
+- Property data cached locally to minimize requests
+- Script execution requires explicit approval
+
+## Anti-Bot Protection
+
+- Rate limiting: Max 15 listings fetched at once
+- Random delays: 800-1500ms between requests
+- Small batches: 2 requests at a time
+- Aggressive caching to avoid repeated fetches
 
 ## Troubleshooting
 
 ### "Please set your Claude API key"
-Click the extension icon and add your API key.
+Click extension icon → paste API key → Save
 
 ### Chat not appearing
-Make sure you're on an Idealista search page (URL contains `/alquiler-` or `/venta-`).
+Must be on Idealista search page (`/alquiler-*` or `/venta-*`)
 
-### Rate limiting errors
-Wait a few seconds and try again. The extension limits requests to avoid detection.
+### Reply widget not appearing
+Must be on conversations page (`/conversations`)
 
-### Filters not working as expected
-- Native filters reload the page - this is expected
-- Client-side filters only affect the current page
-- Use "Muestra todo" to reset all filters
+### Responses sound too formal/AI-like
+The two-pass system should handle this. If persists, adjust the market context in settings.
+
+### Wrong rental type detected
+Check console logs (F12) for `[AI] Tipo de alquiler detectado:` to see what was detected and why.
 
 ## Development
 
-### Prerequisites
-- Firefox 78+
-- Anthropic API key
+### Debug Logging
+
+Open browser console (F12) to see detailed logs:
+```
+[AI] GENERANDO RESPUESTA - DEBUG INFO:
+[AI] Tipo de alquiler detectado: temporal
+[AI] Duración encontrada: 3 to 9 months
+[AI] Descripción del piso: ...
+[AI] Primera iteración (borrador): ...
+[AI] Segunda iteración (humanizado): ...
+```
 
 ### Local Development
-1. Make changes to the source files
-2. Go to `about:debugging#/runtime/this-firefox`
-3. Click **"Reload"** on the extension
-4. Refresh the Idealista page
+1. Make changes to source files
+2. Firefox: `about:debugging` → Reload
+3. Chrome: `chrome://extensions` → Reload
+4. Refresh Idealista page
 
 ## Cost Estimation
 
 Uses Claude Sonnet. Typical costs:
-- Opening a page: ~500 tokens
-- Simple filter: ~1000 tokens
-- Complex analysis: ~2000 tokens
+- Opening search page: ~500 tokens
+- Simple filter: ~1,000 tokens
+- Reply generation (2 passes): ~2,000 tokens
+- Property analysis: ~1,500 tokens
 
-Expect a few cents per session at current API pricing.
+Expect a few cents per session.
 
 ## License
 
