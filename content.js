@@ -564,8 +564,14 @@ async function init() {
   const pageType = detectPageType();
   console.log('Page type:', pageType);
 
+  if (pageType === 'property') {
+    console.log('Property detail page detected, initializing detail assistant');
+    await initPropertyDetailPage();
+    return;
+  }
+
   if (pageType !== 'search') {
-    console.log('Not a search page, skipping initialization');
+    console.log('Not a search or property page, skipping initialization');
     return;
   }
 
@@ -642,6 +648,290 @@ function detectPageType() {
   if (url.includes('/inmueble/')) return 'property';
   if (url.includes('/alquiler-') || url.includes('/venta-') || url.includes('/multi/')) return 'search';
   return 'unknown';
+}
+
+// ============================================================================
+// PROPERTY DETAIL PAGE
+// ============================================================================
+
+async function initPropertyDetailPage() {
+  await loadApiKey();
+
+  if (!apiKey) {
+    console.log('[AI] No API key, skipping property detail assistant');
+    return;
+  }
+
+  // Extract property details from the page
+  const propertyDetails = extractPropertyDetailsFromPage();
+  console.log('[AI] Property details:', propertyDetails);
+
+  // Create the AI widget
+  createPropertyWidget();
+
+  // Generate summary and draft message
+  setTimeout(() => {
+    generatePropertyAnalysis(propertyDetails);
+  }, 500);
+}
+
+function extractPropertyDetailsFromPage() {
+  const details = {
+    id: window.location.pathname.match(/inmueble\/(\d+)/)?.[1],
+    title: document.querySelector('h1.main-info__title-main, .main-info__title-main')?.textContent?.trim(),
+    subtitle: document.querySelector('.main-info__title-minor')?.textContent?.trim(),
+    price: document.querySelector('.info-data-price')?.textContent?.trim(),
+    pricePerMeter: document.querySelector('.flex-feature-details .txt-big')?.textContent?.trim(),
+    description: document.querySelector('.comment p, .adCommentsLanguage')?.textContent?.trim(),
+    features: [],
+    basics: [],
+    building: [],
+    equipment: [],
+    energyRating: null,
+    advertiserName: document.querySelector('.advertiser-name, input[name="user-name"]')?.value ||
+                    document.querySelector('.advertiser-name')?.textContent?.trim(),
+    advertiserType: document.querySelector('.professional-name .name')?.textContent?.trim(),
+    agencyName: document.querySelector('.about-advertiser-name')?.textContent?.trim(),
+    location: document.querySelector('.main-info__title-minor')?.textContent?.trim(),
+    photos: document.querySelectorAll('.detail-image-carousel img, .gallery-container img').length
+  };
+
+  // Extract basic features (rooms, bathrooms, size)
+  document.querySelectorAll('.info-features span').forEach(span => {
+    details.basics.push(span.textContent.trim());
+  });
+
+  // Extract detailed features
+  document.querySelectorAll('.details-property_features li, .details-property-feature-one li').forEach(li => {
+    details.features.push(li.textContent.trim());
+  });
+
+  // Extract building info
+  document.querySelectorAll('.details-property-feature-two li, .details-property_features li').forEach(li => {
+    const text = li.textContent.trim();
+    if (text) details.building.push(text);
+  });
+
+  // Extract equipment
+  document.querySelectorAll('.details-property-feature-three li').forEach(li => {
+    details.equipment.push(li.textContent.trim());
+  });
+
+  // Energy rating
+  const energySpans = document.querySelectorAll('[class*="icon-energy"]');
+  energySpans.forEach(el => {
+    const matchConsumption = el.className.match(/icon-energy-c-([a-g])/i);
+    const matchEmissions = el.className.match(/icon-energy-e-([a-g])/i);
+    if (matchConsumption) details.energyConsumption = matchConsumption[1].toUpperCase();
+    if (matchEmissions) details.energyEmissions = matchEmissions[1].toUpperCase();
+  });
+  details.energyRating = details.energyConsumption || details.energyEmissions;
+
+  // Check for special conditions
+  const pageText = document.body.textContent.toLowerCase();
+  details.allowsPets = pageText.includes('se admiten mascotas') || pageText.includes('admite mascotas');
+  details.hasAC = pageText.includes('aire acondicionado');
+  details.hasElevator = pageText.includes('ascensor');
+  details.hasParking = pageText.includes('garaje') || pageText.includes('parking') || pageText.includes('plaza de garaje');
+  details.hasTerrace = pageText.includes('terraza');
+  details.hasBalcony = pageText.includes('balcón');
+  details.isExterior = pageText.includes('exterior');
+  details.isFurnished = pageText.includes('amueblado');
+
+  return details;
+}
+
+function createPropertyWidget() {
+  // Remove existing widget if any
+  document.getElementById('ai-property-widget')?.remove();
+
+  const widget = document.createElement('div');
+  widget.id = 'ai-property-widget';
+  widget.innerHTML = `
+    <div class="ai-widget-header">
+      <span class="ai-widget-title">🤖 Asistente IA</span>
+      <button class="ai-widget-toggle" title="Minimizar">−</button>
+    </div>
+    <div class="ai-widget-content">
+      <div class="ai-widget-loading">
+        <div class="ai-widget-spinner"></div>
+        <span>Analizando el piso...</span>
+      </div>
+      <div class="ai-widget-summary" style="display: none;">
+        <h4>📋 Resumen</h4>
+        <div class="ai-summary-text"></div>
+      </div>
+      <div class="ai-widget-pros-cons" style="display: none;">
+        <div class="ai-pros">
+          <h4>✅ Pros</h4>
+          <ul class="ai-pros-list"></ul>
+        </div>
+        <div class="ai-cons">
+          <h4>⚠️ Contras</h4>
+          <ul class="ai-cons-list"></ul>
+        </div>
+      </div>
+      <div class="ai-widget-message" style="display: none;">
+        <h4>✉️ Mensaje sugerido</h4>
+        <p class="ai-message-note">Haz clic para copiar al formulario de contacto</p>
+        <div class="ai-draft-message"></div>
+        <button class="ai-copy-message">📋 Copiar al formulario</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(widget);
+
+  // Toggle minimize
+  widget.querySelector('.ai-widget-toggle').addEventListener('click', () => {
+    widget.classList.toggle('minimized');
+    const btn = widget.querySelector('.ai-widget-toggle');
+    btn.textContent = widget.classList.contains('minimized') ? '+' : '−';
+  });
+
+  // Copy to contact form
+  widget.querySelector('.ai-copy-message').addEventListener('click', () => {
+    const draftMessage = widget.querySelector('.ai-draft-message').textContent;
+    const textarea = document.querySelector('textarea[name="contact-message"]');
+    if (textarea) {
+      textarea.value = draftMessage;
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      textarea.dispatchEvent(new Event('change', { bubbles: true }));
+
+      // Visual feedback
+      const btn = widget.querySelector('.ai-copy-message');
+      btn.textContent = '✓ Copiado';
+      btn.style.background = '#10b981';
+      setTimeout(() => {
+        btn.textContent = '📋 Copiar al formulario';
+        btn.style.background = '';
+      }, 2000);
+
+      // Scroll to contact form
+      textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      textarea.focus();
+    }
+  });
+}
+
+async function generatePropertyAnalysis(details) {
+  const widget = document.getElementById('ai-property-widget');
+  if (!widget) return;
+
+  const prompt = `Analiza este piso de alquiler en Idealista y proporciona:
+
+DATOS DEL PISO:
+- Título: ${details.title || 'No disponible'}
+- Ubicación: ${details.location || 'No disponible'}
+- Precio: ${details.price || 'No disponible'}
+- Características básicas: ${details.basics.join(', ') || 'No disponible'}
+- Características: ${details.features.join(', ') || 'No disponible'}
+- Edificio: ${details.building.join(', ') || 'No disponible'}
+- Equipamiento: ${details.equipment.join(', ') || 'No disponible'}
+- Certificado energético: ${details.energyRating || 'No disponible'}
+- Fotos: ${details.photos}
+- Admite mascotas: ${details.allowsPets ? 'Sí' : 'No mencionado'}
+- Aire acondicionado: ${details.hasAC ? 'Sí' : 'No'}
+- Ascensor: ${details.hasElevator ? 'Sí' : 'No'}
+- Terraza/Balcón: ${details.hasTerrace || details.hasBalcony ? 'Sí' : 'No'}
+- Amueblado: ${details.isFurnished ? 'Sí' : 'No'}
+
+DESCRIPCIÓN:
+${details.description || 'No disponible'}
+
+ANUNCIANTE:
+- Nombre: ${details.advertiserName || 'No disponible'}
+- Tipo: ${details.advertiserType || 'No disponible'}
+- Agencia: ${details.agencyName || 'Particular'}
+
+Por favor responde en JSON con esta estructura exacta:
+{
+  "summary": "Resumen de 2-3 frases del piso, destacando lo más importante",
+  "pros": ["pro1", "pro2", "pro3"],
+  "cons": ["contra1", "contra2", "contra3"],
+  "draftMessage": "Mensaje corto y profesional para contactar al anunciante, mostrando interés genuino y haciendo 1-2 preguntas relevantes sobre el piso. Firma como 'Pablo'. No incluyas datos de contacto, Idealista los añade automáticamente."
+}
+
+IMPORTANTE:
+- Los pros/cons deben ser específicos de este piso, no genéricos
+- El mensaje debe ser natural, no robótico
+- Si hay pocos datos, sé honesto sobre las limitaciones
+- Máximo 3-4 pros y 3-4 contras
+- El mensaje NO debe ser muy largo, máximo 4-5 líneas`;
+
+  try {
+    const response = await fetch(CLAUDE_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('API request failed');
+    }
+
+    const data = await response.json();
+    const textContent = data.content.find(b => b.type === 'text')?.text || '';
+
+    // Parse JSON from response
+    const jsonMatch = textContent.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response');
+    }
+
+    const analysis = JSON.parse(jsonMatch[0]);
+    displayPropertyAnalysis(analysis);
+
+  } catch (error) {
+    console.error('[AI] Error generating analysis:', error);
+    widget.querySelector('.ai-widget-loading').innerHTML = `
+      <span style="color: #ef4444;">Error al analizar. <button onclick="generatePropertyAnalysis(extractPropertyDetailsFromPage())" style="color: #6366f1; text-decoration: underline; background: none; border: none; cursor: pointer;">Reintentar</button></span>
+    `;
+  }
+}
+
+function displayPropertyAnalysis(analysis) {
+  const widget = document.getElementById('ai-property-widget');
+  if (!widget) return;
+
+  // Hide loading
+  widget.querySelector('.ai-widget-loading').style.display = 'none';
+
+  // Show summary
+  const summarySection = widget.querySelector('.ai-widget-summary');
+  summarySection.style.display = 'block';
+  summarySection.querySelector('.ai-summary-text').textContent = analysis.summary;
+
+  // Show pros/cons
+  const prosConsSection = widget.querySelector('.ai-widget-pros-cons');
+  prosConsSection.style.display = 'flex';
+
+  const prosList = widget.querySelector('.ai-pros-list');
+  prosList.innerHTML = analysis.pros.map(pro => `<li>${pro}</li>`).join('');
+
+  const consList = widget.querySelector('.ai-cons-list');
+  consList.innerHTML = analysis.cons.map(con => `<li>${con}</li>`).join('');
+
+  // Show draft message
+  const messageSection = widget.querySelector('.ai-widget-message');
+  messageSection.style.display = 'block';
+  widget.querySelector('.ai-draft-message').textContent = analysis.draftMessage;
+
+  // Also auto-fill the contact form textarea (but don't send)
+  const textarea = document.querySelector('textarea[name="contact-message"]');
+  if (textarea && !textarea.value) {
+    textarea.value = analysis.draftMessage;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }
 }
 
 async function loadApiKey() {
