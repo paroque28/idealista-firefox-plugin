@@ -572,19 +572,16 @@ async function init() {
   // Load API key
   await loadApiKey();
 
-  // Load saved state
+  // Load saved state (sets sidebarVisible, chatMessages, currentFilters)
   const hasState = loadState();
+  const shouldOpenSidebar = sidebarVisible; // Save before UI creation resets it
 
-  // Create chat UI
+  // Create chat UI (sidebar starts hidden)
   createChatUI();
 
   // Restore chat messages if any
   if (hasState && chatMessages.length > 0) {
     restoreChatMessages();
-    // Always open sidebar if we have history
-    if (!sidebarVisible) {
-      toggleSidebar();
-    }
   }
 
   // Restore pending input
@@ -618,9 +615,7 @@ async function init() {
   if (pendingNav && pendingNav.pendingNavigation) {
     console.log('[AI] Continuing after navigation:', pendingNav.navigationMessage);
     // Open sidebar and continue conversation
-    if (!sidebarVisible) {
-      toggleSidebar();
-    }
+    setSidebarOpen(true);
     setTimeout(() => {
       if (apiKey) {
         const summary = toolGetPageSummary();
@@ -629,6 +624,9 @@ async function init() {
         processWithClaude(continuePrompt, true);
       }
     }, 1500);
+  } else if (shouldOpenSidebar || (hasState && chatMessages.length > 0)) {
+    // Restore sidebar state or open if there's history
+    setSidebarOpen(true);
   } else if (!hasState || chatMessages.length === 0) {
     // Send proactive greeting only if no history and no pending navigation
     setTimeout(() => {
@@ -870,14 +868,21 @@ function createChatUI() {
 }
 
 function toggleSidebar() {
+  setSidebarOpen(!sidebarVisible);
+}
+
+function setSidebarOpen(open) {
   const sidebar = document.getElementById('idealista-ai-sidebar');
   const toggle = document.getElementById('idealista-ai-toggle');
-  sidebarVisible = !sidebarVisible;
+
+  if (!sidebar || !toggle) return;
+
+  sidebarVisible = open;
 
   if (sidebarVisible) {
     sidebar.classList.add('visible');
     toggle.classList.add('hidden');
-    document.getElementById('ai-input').focus();
+    document.getElementById('ai-input')?.focus();
   } else {
     sidebar.classList.remove('visible');
     toggle.classList.remove('hidden');
@@ -1605,7 +1610,8 @@ function toolGoToPage(input) {
   for (const link of pageLinks) {
     const text = link.textContent.trim();
     if (parseInt(text) === page) {
-      // Save state before navigation
+      // Ensure sidebar stays open after reload
+      sidebarVisible = true;
       saveState();
       savePendingNavigation(`User asked to go to page ${page}`);
       window.location.href = link.href;
@@ -1624,7 +1630,8 @@ function toolNextPage() {
     return { error: 'No next page available' };
   }
 
-  // Save state before navigation
+  // Ensure sidebar stays open after reload
+  sidebarVisible = true;
   saveState();
   savePendingNavigation('User asked to go to next page');
   window.location.href = nextLink.href;
@@ -1639,7 +1646,8 @@ function toolPreviousPage() {
     return { error: 'No previous page available' };
   }
 
-  // Save state before navigation
+  // Ensure sidebar stays open after reload
+  sidebarVisible = true;
   saveState();
   savePendingNavigation('User asked to go to previous page');
   window.location.href = prevLink.href;
@@ -1656,6 +1664,9 @@ function toolSetSearchFilters(input) {
   if (!url || appliedFilters.length === 0) {
     return { error: 'No valid filters to apply' };
   }
+
+  // Ensure sidebar stays open after reload
+  sidebarVisible = true;
 
   // Save state and navigate
   saveState();
