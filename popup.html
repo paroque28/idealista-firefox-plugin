@@ -3,97 +3,61 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Idealista Helper</title>
+  <title>Idealista AI Assistant</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="popup-container">
     <header>
-      <h1>Idealista Helper</h1>
-      <p class="subtitle">Enhance your property search</p>
+      <h1>Idealista AI Assistant</h1>
+      <p class="subtitle">Powered by Claude</p>
     </header>
-    
+
     <main>
-      <section class="stats-section">
-        <h2>Statistics</h2>
-        <div class="stats-grid">
-          <div class="stat-item">
-            <span class="stat-value" id="viewedCount">0</span>
-            <span class="stat-label">Properties Viewed</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-value" id="priceDropsCount">0</span>
-            <span class="stat-label">Price Drops</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-value" id="redFlagsCount">0</span>
-            <span class="stat-label">Red Flags Found</span>
-          </div>
+      <section class="api-key-section">
+        <h2>Claude API Key</h2>
+        <p class="description">Enter your Anthropic API key to enable the AI assistant.</p>
+
+        <div class="input-group">
+          <input
+            type="password"
+            id="apiKey"
+            placeholder="sk-ant-api03-..."
+            autocomplete="off"
+          >
+          <button id="toggleVisibility" class="btn-icon" title="Toggle visibility">
+            <span class="eye-icon">👁</span>
+          </button>
         </div>
+
+        <div id="status" class="status"></div>
+
+        <button id="saveKey" class="btn btn-primary">
+          Save API Key
+        </button>
+
+        <button id="clearKey" class="btn btn-secondary">
+          Clear API Key
+        </button>
       </section>
-      
-      <section class="settings-section">
-        <h2>Quick Settings</h2>
-        
-        <div class="setting-item">
-          <label>
-            <input type="checkbox" id="hideViewed">
-            <span>Hide viewed listings</span>
-          </label>
-        </div>
-        
-        <div class="setting-item">
-          <label>
-            <input type="checkbox" id="showRedFlags">
-            <span>Show red flag warnings</span>
-          </label>
-        </div>
-        
-        <div class="setting-item">
-          <label>
-            <input type="checkbox" id="enableNotifications">
-            <span>Enable notifications</span>
-          </label>
-        </div>
-        
-        <div class="setting-item">
-          <label for="minEnergyRating">Minimum Energy Rating:</label>
-          <select id="minEnergyRating">
-            <option value="">Any</option>
-            <option value="A">A (Best)</option>
-            <option value="B">B</option>
-            <option value="C">C</option>
-            <option value="D">D</option>
-            <option value="E">E</option>
-            <option value="F">F</option>
-            <option value="G">G (Worst)</option>
-          </select>
-        </div>
-      </section>
-      
-      <section class="actions-section">
-        <h2>Quick Actions</h2>
-        
-        <button id="clearHistory" class="btn btn-secondary">
-          Clear Viewed History
-        </button>
-        
-        <button id="exportData" class="btn btn-secondary">
-          Export Data
-        </button>
-        
-        <button id="viewDocs" class="btn btn-primary">
-          View Documentation
-        </button>
+
+      <section class="help-section">
+        <h2>How to use</h2>
+        <ol>
+          <li>Get an API key from <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a></li>
+          <li>Paste your key above and click Save</li>
+          <li>Go to any Idealista search page</li>
+          <li>Click the chat icon in the bottom-right corner</li>
+          <li>Ask Claude to help you find the perfect flat!</li>
+        </ol>
       </section>
     </main>
-    
+
     <footer>
       <p>Version 1.0.0</p>
-      <p><a href="https://github.com/paroque28/idealista-firefox-plugin" target="_blank">GitHub</a></p>
     </footer>
   </div>
-  
+
   <script src="popup.js"></script>
 </body>
 </html>

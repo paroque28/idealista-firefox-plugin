@@ -1,237 +1,116 @@
-// Popup script for Idealista Helper
-// Handles the extension popup UI and user interactions
+// Popup script for Idealista AI Assistant
+// Handles API key management
 
-console.log('Idealista Helper: Popup script loaded');
+console.log('Idealista AI Assistant: Popup script loaded');
 
-// Load data when popup opens
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadStatistics();
-  await loadSettings();
+  await loadApiKey();
   setupEventListeners();
 });
 
-// Load statistics
-async function loadStatistics() {
+// Load existing API key
+async function loadApiKey() {
   try {
-    // Get viewed listings count
-    const viewedResult = await browser.storage.local.get('viewedListings');
-    const viewedListings = viewedResult.viewedListings || {};
-    const viewedCount = Object.keys(viewedListings).length;
-    document.getElementById('viewedCount').textContent = viewedCount;
-    
-    // Get price drops count
-    const priceResult = await browser.storage.local.get('priceHistory');
-    const priceHistory = priceResult.priceHistory || {};
-    let priceDropsCount = 0;
-    
-    for (const history of Object.values(priceHistory)) {
-      if (history.length >= 2) {
-        const firstPrice = history[0].price;
-        const lastPrice = history[history.length - 1].price;
-        if (lastPrice < firstPrice) {
-          priceDropsCount++;
-        }
-      }
+    const response = await browser.runtime.sendMessage({ action: 'getApiKey' });
+    if (response.apiKey) {
+      document.getElementById('apiKey').value = response.apiKey;
+      showStatus('API key is set', 'success');
+    } else {
+      showStatus('No API key configured', 'warning');
     }
-    
-    document.getElementById('priceDropsCount').textContent = priceDropsCount;
-    
-    // Get red flags count
-    const flagsResult = await browser.storage.local.get('redFlags');
-    const redFlags = flagsResult.redFlags || {};
-    const redFlagsCount = Object.keys(redFlags).length;
-    document.getElementById('redFlagsCount').textContent = redFlagsCount;
-    
   } catch (error) {
-    console.error('Error loading statistics:', error);
-  }
-}
-
-// Load user settings
-async function loadSettings() {
-  try {
-    const result = await browser.storage.sync.get('userPreferences');
-    const prefs = result.userPreferences || {};
-    
-    // Set checkbox states
-    if (prefs.filters) {
-      document.getElementById('hideViewed').checked = prefs.filters.hideViewedListings || false;
-      document.getElementById('showRedFlags').checked = prefs.filters.showRedFlags !== false; // Default true
-      
-      if (prefs.filters.minEnergyRating) {
-        document.getElementById('minEnergyRating').value = prefs.filters.minEnergyRating;
-      }
-    }
-    
-    if (prefs.notifications) {
-      document.getElementById('enableNotifications').checked = prefs.notifications.enabled !== false; // Default true
-    }
-    
-  } catch (error) {
-    console.error('Error loading settings:', error);
-  }
-}
-
-// Save user settings
-async function saveSettings() {
-  try {
-    const result = await browser.storage.sync.get('userPreferences');
-    const prefs = result.userPreferences || {};
-    
-    // Update preferences
-    prefs.filters = prefs.filters || {};
-    prefs.filters.hideViewedListings = document.getElementById('hideViewed').checked;
-    prefs.filters.showRedFlags = document.getElementById('showRedFlags').checked;
-    prefs.filters.minEnergyRating = document.getElementById('minEnergyRating').value;
-    
-    prefs.notifications = prefs.notifications || {};
-    prefs.notifications.enabled = document.getElementById('enableNotifications').checked;
-    
-    // Save to storage
-    await browser.storage.sync.set({ userPreferences: prefs });
-    
-    console.log('Settings saved');
-    showNotification('Settings saved successfully!');
-    
-  } catch (error) {
-    console.error('Error saving settings:', error);
-    showNotification('Error saving settings', 'error');
+    console.error('Error loading API key:', error);
+    showStatus('Error loading API key', 'error');
   }
 }
 
 // Setup event listeners
 function setupEventListeners() {
-  // Save settings on change
-  const settingsInputs = [
-    'hideViewed',
-    'showRedFlags',
-    'enableNotifications',
-    'minEnergyRating'
-  ];
-  
-  settingsInputs.forEach(id => {
-    const element = document.getElementById(id);
-    if (element) {
-      element.addEventListener('change', saveSettings);
+  // Save button
+  document.getElementById('saveKey').addEventListener('click', saveApiKey);
+
+  // Clear button
+  document.getElementById('clearKey').addEventListener('click', clearApiKey);
+
+  // Toggle visibility
+  document.getElementById('toggleVisibility').addEventListener('click', toggleKeyVisibility);
+
+  // Enter key to save
+  document.getElementById('apiKey').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      saveApiKey();
     }
   });
-  
-  // Clear history button
-  document.getElementById('clearHistory')?.addEventListener('click', async () => {
-    if (confirm('Are you sure you want to clear all viewed history?')) {
-      await clearViewedHistory();
-    }
-  });
-  
-  // Export data button
-  document.getElementById('exportData')?.addEventListener('click', exportData);
-  
-  // View docs button
-  document.getElementById('viewDocs')?.addEventListener('click', () => {
-    browser.tabs.create({
-      url: 'https://github.com/paroque28/idealista-firefox-plugin'
+}
+
+// Save API key
+async function saveApiKey() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+
+  if (!apiKey) {
+    showStatus('Please enter an API key', 'error');
+    return;
+  }
+
+  if (!apiKey.startsWith('sk-ant-')) {
+    showStatus('Invalid API key format', 'error');
+    return;
+  }
+
+  try {
+    const response = await browser.runtime.sendMessage({
+      action: 'setApiKey',
+      apiKey: apiKey
     });
-  });
-}
 
-// Clear viewed history
-async function clearViewedHistory() {
-  try {
-    await browser.storage.local.set({ viewedListings: {} });
-    await loadStatistics();
-    showNotification('Viewed history cleared!');
+    if (response.success) {
+      showStatus('API key saved successfully!', 'success');
+    } else {
+      showStatus('Error saving API key', 'error');
+    }
   } catch (error) {
-    console.error('Error clearing history:', error);
-    showNotification('Error clearing history', 'error');
+    console.error('Error saving API key:', error);
+    showStatus('Error saving API key', 'error');
   }
 }
 
-// Export all data
-async function exportData() {
+// Clear API key
+async function clearApiKey() {
   try {
-    const localData = await browser.storage.local.get(null);
-    const syncData = await browser.storage.sync.get(null);
-    
-    const exportObject = {
-      exportedAt: new Date().toISOString(),
-      version: '1.0.0',
-      local: localData,
-      sync: syncData
-    };
-    
-    const dataStr = JSON.stringify(exportObject, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    
-    // Create download link
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `idealista-helper-export-${Date.now()}.json`;
-    a.click();
-    
-    URL.revokeObjectURL(url);
-    
-    showNotification('Data exported successfully!');
+    const response = await browser.runtime.sendMessage({
+      action: 'setApiKey',
+      apiKey: ''
+    });
+
+    if (response.success) {
+      document.getElementById('apiKey').value = '';
+      showStatus('API key cleared', 'warning');
+    }
   } catch (error) {
-    console.error('Error exporting data:', error);
-    showNotification('Error exporting data', 'error');
+    console.error('Error clearing API key:', error);
+    showStatus('Error clearing API key', 'error');
   }
 }
 
-// Show notification message
-function showNotification(message, type = 'success') {
-  const notification = document.createElement('div');
-  notification.className = `notification notification-${type}`;
-  notification.textContent = message;
-  notification.style.cssText = `
-    position: fixed;
-    top: 10px;
-    right: 10px;
-    padding: 12px 16px;
-    background: ${type === 'success' ? '#4CAF50' : '#f44336'};
-    color: white;
-    border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    z-index: 10000;
-    animation: slideIn 0.3s ease-out;
-  `;
-  
-  document.body.appendChild(notification);
-  
-  // Remove after 3 seconds
-  setTimeout(() => {
-    notification.style.animation = 'slideOut 0.3s ease-out';
-    setTimeout(() => {
-      notification.remove();
-    }, 300);
-  }, 3000);
+// Toggle API key visibility
+function toggleKeyVisibility() {
+  const input = document.getElementById('apiKey');
+  const icon = document.querySelector('.eye-icon');
+
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    icon.textContent = '👁';
+  }
 }
 
-// Add animation styles
-const style = document.createElement('style');
-style.textContent = `
-  @keyframes slideIn {
-    from {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    to {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  
-  @keyframes slideOut {
-    from {
-      transform: translateX(0);
-      opacity: 1;
-    }
-    to {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-  }
-`;
-document.head.appendChild(style);
+// Show status message
+function showStatus(message, type) {
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = message;
+  statusEl.className = `status status-${type}`;
+}
 
-console.log('Idealista Helper: Popup initialized');
+console.log('Idealista AI Assistant: Popup initialized');

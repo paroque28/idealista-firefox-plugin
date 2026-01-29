@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Idealista Helper",
   "version": "1.0.0",
-  "description": "Firefox plugin to enhance Idealista navigation with additional filters, AI-powered features, and red flag detection",
+  "description": "AI-powered assistant for finding flats on Idealista using Claude",
   "icons": {
     "48": "icons/icon-48.png",
     "96": "icons/icon-96.png"
@@ -10,7 +10,8 @@
   "permissions": [
     "storage",
     "activeTab",
-    "*://www.idealista.com/*"
+    "*://www.idealista.com/*",
+    "https://api.anthropic.com/*"
   ],
   "content_scripts": [
     {
