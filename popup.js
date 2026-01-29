@@ -135,6 +135,7 @@ async function loadProfile() {
     document.getElementById('profilePets').value = profile.pets || '';
     document.getElementById('profilePreferences').value = profile.preferences || '';
     document.getElementById('profileFlexibility').value = profile.flexibility || '';
+    document.getElementById('profileTemporalReason').value = profile.temporalReason || '';
     document.getElementById('profileNotes').value = profile.notes || '';
     document.getElementById('profileMarketContext').value = profile.marketContext || '';
 
@@ -154,6 +155,7 @@ async function saveProfile() {
     pets: document.getElementById('profilePets').value.trim(),
     preferences: document.getElementById('profilePreferences').value.trim(),
     flexibility: document.getElementById('profileFlexibility').value.trim(),
+    temporalReason: document.getElementById('profileTemporalReason').value.trim(),
     notes: document.getElementById('profileNotes').value.trim(),
     marketContext: document.getElementById('profileMarketContext').value.trim()
   };

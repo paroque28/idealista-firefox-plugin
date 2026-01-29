@@ -1028,11 +1028,12 @@ function getProfileContext() {
   if (userProfile.income) parts.push(`Ingresos: ${userProfile.income}`);
   if (userProfile.pets) parts.push(`Mascotas: ${userProfile.pets}`);
   if (userProfile.preferences) parts.push(`Preferencias: ${userProfile.preferences}`);
-  if (userProfile.flexibility) parts.push(`Flexibilidad: ${userProfile.flexibility}`);
+  if (userProfile.flexibility) parts.push(`Flexibilidad fechas: ${userProfile.flexibility}`);
+  if (userProfile.temporalReason) parts.push(`⭐ RAZÓN TEMPORAL REAL: ${userProfile.temporalReason}`);
   if (userProfile.notes) parts.push(`Notas: ${userProfile.notes}`);
 
   if (userMemories.length > 0) {
-    parts.push(`Memorias del usuario: ${userMemories.join('; ')}`);
+    parts.push(`Memorias: ${userMemories.join('; ')}`);
   }
 
   return parts.join('\n');
@@ -1403,21 +1404,51 @@ async function generateConversationReply() {
   let context = extractConversationContext();
   const tone = document.getElementById('ai-reply-tone-select')?.value || 'professional';
 
-  // Try to fetch property description if we have a link but no description
-  if (!context.propertyDescription) {
-    const propertyLink = document.querySelector('a[href*="/inmueble/"]');
-    if (propertyLink) {
-      const propertyId = propertyLink.href.match(/inmueble\/(\d+)/)?.[1];
-      if (propertyId && listingDetailsCache[propertyId]?.description) {
+  // ALWAYS try to fetch the property listing for full description
+  const propertyLink = document.querySelector('a[href*="/inmueble/"]');
+  if (propertyLink) {
+    const propertyId = propertyLink.href.match(/inmueble\/(\d+)/)?.[1];
+    console.log('[AI] Found property link, ID:', propertyId);
+
+    if (propertyId) {
+      // Check cache first
+      if (listingDetailsCache[propertyId]?.description) {
+        console.log('[AI] Using cached property details');
         context.propertyDescription = listingDetailsCache[propertyId].description;
-      } else if (propertyId) {
-        // Quick fetch of property description
+        context.propertyFullDetails = listingDetailsCache[propertyId];
+      } else {
+        // Fetch the full listing page
+        console.log('[AI] Fetching property details from listing page...');
         try {
-          const details = await toolGetListingDetails({ listing_id: propertyId });
-          if (details?.description) {
-            context.propertyDescription = details.description;
-            listingDetailsCache[propertyId] = details;
-          }
+          const response = await fetch(propertyLink.href);
+          const html = await response.text();
+
+          // Parse the HTML to extract description and other info
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+
+          // Get the full description
+          const descriptionEl = doc.querySelector('.comment p, .adCommentsLanguage, [class*="description"]');
+          const fullDescription = descriptionEl?.textContent?.trim() || '';
+
+          // Also get key features that might mention duration, conditions, etc.
+          const featuresText = Array.from(doc.querySelectorAll('.details-property_features li, .details-property-feature-one li'))
+            .map(el => el.textContent.trim())
+            .join(', ');
+
+          const fullDetails = {
+            description: fullDescription,
+            features: featuresText,
+            title: doc.querySelector('h1, .main-info__title-main')?.textContent?.trim(),
+            price: doc.querySelector('.info-data-price')?.textContent?.trim()
+          };
+
+          context.propertyDescription = `${fullDescription}\n\nCaracterísticas: ${featuresText}`;
+          context.propertyFullDetails = fullDetails;
+          listingDetailsCache[propertyId] = fullDetails;
+
+          console.log('[AI] Fetched property description:', fullDescription?.substring(0, 200));
+          console.log('[AI] Fetched property features:', featuresText?.substring(0, 200));
         } catch (e) {
           console.log('[AI] Could not fetch property details:', e);
         }
@@ -1435,13 +1466,8 @@ async function generateConversationReply() {
   widget.querySelector('.ai-reply-loading').style.display = 'flex';
   widget.querySelector('.ai-reply-result').style.display = 'none';
 
-  // Update loading text based on what we're doing
   const loadingText = widget.querySelector('.ai-reply-loading span');
-  if (!context.propertyDescription) {
-    loadingText.textContent = 'Analizando conversación y piso...';
-  } else {
-    loadingText.textContent = 'Generando respuesta persuasiva...';
-  }
+  loadingText.textContent = 'Cargando detalles del piso...';
 
   const profileContext = getProfileContext();
   const conversationHistory = context.messages
@@ -1532,13 +1558,19 @@ ${conversationHistory}
 
 TONO: ${tone === 'professional' ? 'Profesional y confiable' : tone === 'friendly' ? 'Cercano y simpático' : tone === 'formal' ? 'Muy formal' : tone === 'enthusiastic' ? 'Entusiasta' : 'Directo y breve'}
 
+⚠️ REGLA CRÍTICA - NO INVENTAR NADA:
+- SOLO usa información que esté en el perfil del usuario o en la conversación
+- NO inventes proyectos, motivos de viaje, o razones que no existan
+- NO inventes duraciones específicas si no las conoces
+- Si es TEMPORAL y no hay razón específica en el perfil, usa la situación REAL: trabajo remoto permite flexibilidad de ubicación
+- Mejor ser honesto y vago que mentir con detalles específicos
+
 INSTRUCCIONES:
-1. Lee la descripción del anuncio y adapta tu respuesta a lo que pide
-2. ASUME que cumples las condiciones - no preguntes
-3. Si es TEMPORAL: da razón específica que encaje con la duración del anuncio
-4. Menciona algo específico del piso que te guste
-5. ${tone === 'brief' ? 'Máximo 3 líneas' : 'Máximo 5 líneas'}
-6. No repitas saludos si ya se saludaron
+1. Lee la descripción del anuncio y adapta tu respuesta
+2. USA SOLO información real del perfil
+3. Si es temporal y no hay razón específica: di que trabajas remoto y buscas establecerte en la ciudad por una temporada (verdad, no especifica duración falsa)
+4. ${tone === 'brief' ? 'Máximo 3 líneas' : 'Máximo 5 líneas'}
+5. No repitas saludos si ya se saludaron
 
 Escribe SOLO el mensaje, sin explicaciones.`;
 
@@ -1597,23 +1629,31 @@ Escribe SOLO el mensaje, sin explicaciones.`;
 MENSAJE A REVISAR:
 "${firstDraft}"
 
+INFORMACIÓN REAL DEL USUARIO (NO AÑADIR NADA QUE NO ESTÉ AQUÍ):
+${profileContext || 'No disponible'}
+
 CONTEXTO:
 - Es un mensaje para alquilar un piso en España
-- ${rentalType === 'temporal' ? 'Es alquiler TEMPORAL - debe dar razón específica, NO mezclar con largo plazo' : rentalType === 'larga_estancia' ? 'Es alquiler de LARGA ESTANCIA - debe transmitir estabilidad' : 'Tipo de alquiler no claro'}
+- ${rentalType === 'temporal' ? 'Es alquiler TEMPORAL' : rentalType === 'larga_estancia' ? 'Es alquiler de LARGA ESTANCIA' : 'Tipo de alquiler no claro'}
 
 EVALÚA:
-1. ¿Suena a mensaje generado por IA? (frases perfectas, demasiado formal, genérico, usa palabras como "solvencia", "documentación lista", estructuras repetitivas)
-2. ¿Comete el error de mezclar temporal y largo plazo?
-3. ¿Es demasiado largo o tiene información innecesaria?
-4. ¿Suena como escribiría una persona real por WhatsApp/chat?
+1. ¿Suena a mensaje generado por IA? (frases perfectas, demasiado formal, "solvencia", "documentación lista", "estaría encantado")
+2. ¿INVENTA información que no está en el perfil? (proyectos falsos, duraciones inventadas, motivos ficticios)
+3. ¿Es demasiado largo?
+4. ¿Suena como escribiría una persona real por WhatsApp?
+
+⚠️ REGLA CRÍTICA: NO AÑADIR INFORMACIÓN INVENTADA
+- Si el mensaje original inventa un "proyecto de X meses" que NO está en el perfil → ELIMÍNALO
+- Si inventa razones o motivos → ELIMÍNALOS
+- Solo mantén información que sea VERDAD según el perfil
+- Mejor ser vago ("nos establecemos en Barcelona una temporada") que mentir ("proyecto de 8 meses")
 
 REESCRIBE el mensaje para que:
-- Suene 100% humano y natural, como un mensaje real de chat
-- Sea más conciso si es posible
+- Suene 100% humano y natural
+- NO contenga información inventada
+- Sea conciso
 - Use lenguaje coloquial pero educado
-- NO use frases típicas de IA como "estaría encantado", "no dudes en", "quedo a tu disposición"
-- Mantenga la información importante pero de forma natural
-- Si es temporal, que la razón suene creíble y específica
+- Si es temporal y no hay razón real, simplemente di que trabajan remoto y buscan establecerse una temporada
 
 Responde SOLO con el mensaje mejorado, sin explicaciones.`;
 
