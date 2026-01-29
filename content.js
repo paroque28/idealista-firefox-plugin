@@ -15,7 +15,6 @@ const SYSTEM_PROMPT = `You are an AI assistant helping a user find a flat to ren
 You have tools to interact with the property listings on the page.
 
 When the user loads a search page, briefly summarize what you see and offer to help.
-When asked to filter or find properties, use your tools to manipulate the page.
 Explain what you're doing and why in a helpful, concise way.
 
 Be proactive about pointing out:
@@ -23,14 +22,27 @@ Be proactive about pointing out:
 - Red flags (suspiciously low prices, missing info, few photos)
 - Properties that match their criteria well
 
-You can navigate between pages using the pagination tools. The user might ask you to search across multiple pages.
+**IMPORTANT - Filter Strategy**:
+1. **ALWAYS prefer native Idealista filters** (set_search_filters) for objective criteria like:
+   - Price range, size, rooms, bathrooms
+   - Features: pets, AC, elevator, terrace, parking, pool, etc.
+   - Housing type, condition, floor level
+   - Publication date
 
-**AI Filtering**: You have a special ability to filter listings based on subjective criteria by reading their full descriptions. Use get_all_listings_details to fetch descriptions, then analyze them and use filter_listings with listing_ids to show only the ones that match. Examples:
-- "pisos luminosos" - look for mentions of light, windows, orientation
-- "sin ruido" - avoid ground floors, busy streets
-- "bien comunicado" - check for metro/bus mentions
-- "reformado recientemente" - look for renovation mentions
-- "cocina equipada" - check kitchen appliances
+   Native filters apply to ALL search results across all pages and are much more efficient.
+
+2. **Only use filter_listings** (client-side filtering) for:
+   - AI-powered subjective filtering after reading descriptions (e.g., "luminoso", "tranquilo")
+   - Filtering by owner type (particular vs agency) - not available in native filters
+   - Energy certificate requirements - not available in native filters
+
+   Note: filter_listings only affects the CURRENT PAGE. Hidden listings will reappear on other pages.
+
+3. **AI Filtering** (for subjective criteria only):
+   Use get_all_listings_details to fetch descriptions, then analyze them and use filter_listings with listing_ids.
+   Examples: "pisos luminosos", "sin ruido", "bien comunicado", "reformado recientemente"
+
+   CAUTION: This only filters the current page. For best results, first apply native filters to narrow down results.
 
 Keep responses concise - users are browsing, not reading essays.
 Use Spanish for responses since this is a Spanish website, but understand English too.
@@ -41,7 +53,7 @@ Important notes:
 - Energy ratings go from A (best) to G (worst)
 - "Particular" means individual owner, "Agencia" means real estate agency
 
-**Energy Certificates**: Many listings have invalid energy certificates (en trámite, no indicado, exento). When greeting the user, if there are listings without valid A-G ratings, mention how many and ask if they want to hide them using filter_listings with require_energy_cert: true.`;
+**Energy Certificates**: Many listings have invalid energy certificates (en trámite, no indicado, exento). When greeting the user, if there are listings without valid A-G ratings, mention how many and ask if they want to hide them.`;
 
 // Tool definitions for Claude
 const TOOLS = [
@@ -56,7 +68,7 @@ const TOOLS = [
   },
   {
     name: 'filter_listings',
-    description: 'Show or hide listings based on criteria. Hidden listings are not deleted, just hidden from view. Filters are saved and persist across page navigation.',
+    description: 'Show or hide listings on the CURRENT PAGE ONLY. Use this for: (1) AI-powered subjective filtering after reading descriptions, (2) owner type filtering (particular/agency), (3) energy certificate requirements. For objective criteria like price/size/rooms/amenities, ALWAYS use set_search_filters instead as it applies to ALL pages.',
     input_schema: {
       type: 'object',
       properties: {
@@ -203,7 +215,7 @@ const TOOLS = [
   },
   {
     name: 'set_search_filters',
-    description: 'Apply native Idealista search filters. This will reload the page with the new filters applied. Available filters: price range, size range, rooms, bathrooms, amenities (pets, AC, elevator, etc.), and more.',
+    description: 'Apply native Idealista search filters. This will reload the page with the new filters applied across ALL pages. PREFERRED over filter_listings for objective criteria. Available filters: price range, size range, rooms, bathrooms, amenities, condition, floor, publication date, and more.',
     input_schema: {
       type: 'object',
       properties: {
@@ -241,6 +253,10 @@ const TOOLS = [
           type: 'boolean',
           description: 'Must have air conditioning'
         },
+        wardrobes: {
+          type: 'boolean',
+          description: 'Must have built-in wardrobes (armarios empotrados)'
+        },
         elevator: {
           type: 'boolean',
           description: 'Must have elevator'
@@ -265,13 +281,33 @@ const TOOLS = [
           type: 'boolean',
           description: 'Must have garden'
         },
+        storage_room: {
+          type: 'boolean',
+          description: 'Must have storage room (trastero)'
+        },
         furnished: {
           type: 'boolean',
           description: 'Must be furnished'
         },
+        equipped_kitchen: {
+          type: 'boolean',
+          description: 'Must have equipped kitchen only (not fully furnished)'
+        },
         exterior: {
           type: 'boolean',
           description: 'Must be exterior (not interior)'
+        },
+        sea_views: {
+          type: 'boolean',
+          description: 'Must have sea views'
+        },
+        luxury: {
+          type: 'boolean',
+          description: 'Luxury properties only'
+        },
+        accessible: {
+          type: 'boolean',
+          description: 'Accessible housing only'
         },
         new_construction: {
           type: 'boolean',
@@ -280,6 +316,66 @@ const TOOLS = [
         good_condition: {
           type: 'boolean',
           description: 'Good condition only'
+        },
+        to_renovate: {
+          type: 'boolean',
+          description: 'Properties to renovate only'
+        },
+        top_floor: {
+          type: 'boolean',
+          description: 'Top floor only (última planta)'
+        },
+        intermediate_floor: {
+          type: 'boolean',
+          description: 'Intermediate floors only'
+        },
+        ground_floor: {
+          type: 'boolean',
+          description: 'Ground floor only (bajos)'
+        },
+        published_last_24h: {
+          type: 'boolean',
+          description: 'Published in the last 24 hours'
+        },
+        published_last_week: {
+          type: 'boolean',
+          description: 'Published in the last week'
+        },
+        published_last_month: {
+          type: 'boolean',
+          description: 'Published in the last month'
+        },
+        long_term_rental: {
+          type: 'boolean',
+          description: 'Long-term residential rental only'
+        },
+        seasonal_rental: {
+          type: 'boolean',
+          description: 'Seasonal/temporary rental only'
+        },
+        only_flats: {
+          type: 'boolean',
+          description: 'Only flats (pisos), excluding penthouses and duplexes'
+        },
+        penthouses: {
+          type: 'boolean',
+          description: 'Penthouses only (áticos)'
+        },
+        duplexes: {
+          type: 'boolean',
+          description: 'Duplexes only'
+        },
+        chalets: {
+          type: 'boolean',
+          description: 'Houses and chalets'
+        },
+        with_plan: {
+          type: 'boolean',
+          description: 'Must have floor plan'
+        },
+        virtual_tour: {
+          type: 'boolean',
+          description: 'Must have virtual tour'
         }
       }
     }
@@ -295,7 +391,7 @@ const TOOLS = [
   },
   {
     name: 'get_all_listings_details',
-    description: 'Fetch detailed information (including full descriptions) for ALL visible listings on the page. Use this for AI-powered filtering based on subjective criteria like "luminoso", "tranquilo", "reformado", etc. Returns an array with id, title, price, size, description, and features for each listing. After analyzing, use filter_listings with listing_ids to show only matching ones.',
+    description: 'Fetch detailed information (including full descriptions) for visible listings on the page. Use this for AI-powered filtering based on subjective criteria like "luminoso", "tranquilo", "reformado", etc. Returns an array with id, title, price, size, description, and features for each listing. After analyzing, use filter_listings with listing_ids to show only matching ones. NOTE: Limited to 15 listings by default to avoid anti-bot detection.',
     input_schema: {
       type: 'object',
       properties: {
@@ -303,9 +399,32 @@ const TOOLS = [
           type: 'boolean',
           description: 'Include hidden listings too (default: false)',
           default: false
+        },
+        max_listings: {
+          type: 'number',
+          description: 'Maximum number of listings to fetch (default: 15, max recommended: 20 to avoid rate limits)',
+          default: 15
         }
       },
       required: []
+    }
+  },
+  {
+    name: 'execute_page_script',
+    description: 'Execute custom JavaScript to extract ANY data from the page or apply ANY filter. Use this as a flexible fallback when other tools do not support what you need. Examples: extract specific elements, read hidden data attributes, apply custom filtering logic, interact with page elements. The user will see a simple description and approve before execution. This enables unlimited filtering and data extraction capabilities beyond the pre-built tools.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        code: {
+          type: 'string',
+          description: 'JavaScript code to execute. Should return a value (can be object, array, string, etc.). Has access to full DOM.'
+        },
+        description: {
+          type: 'string',
+          description: 'Simple, non-technical description in Spanish of what this will do. The user sees ONLY this to decide. Example: "Buscar pisos que mencionen parking en la descripción"'
+        }
+      },
+      required: ['code', 'description']
     }
   }
 ];
@@ -1089,6 +1208,9 @@ async function executeToolCall(toolName, input) {
     case 'get_all_listings_details':
       result = await toolGetAllListingsDetails(input);
       break;
+    case 'execute_page_script':
+      result = await toolExecutePageScript(input);
+      break;
     default:
       result = { error: `Unknown tool: ${toolName}` };
   }
@@ -1393,151 +1515,225 @@ function toolPreviousPage() {
 function toolSetSearchFilters(input) {
   console.log('[AI] Setting search filters:', input);
 
-  const form = document.getElementById('filter-form');
-  if (!form) {
-    return { error: 'Filter form not found' };
-  }
-
   const appliedFilters = [];
+  const url = buildFilterUrl(input, appliedFilters);
 
-  // Price filters
-  if (input.min_price) {
-    const priceMinInput = form.querySelector('input[name="adfilter_pricemin"]');
-    if (priceMinInput) {
-      priceMinInput.value = input.min_price;
-      appliedFilters.push(`min_price: ${input.min_price}`);
-    }
-  }
-
-  if (input.max_price) {
-    const priceMaxInput = form.querySelector('input[name="adfilter_price"]');
-    if (priceMaxInput) {
-      priceMaxInput.value = input.max_price;
-      appliedFilters.push(`max_price: ${input.max_price}`);
-    }
-  }
-
-  // Size filters
-  if (input.min_size) {
-    const sizeMinInput = form.querySelector('input[name="adfilter_area"]');
-    if (sizeMinInput) {
-      sizeMinInput.value = input.min_size;
-      appliedFilters.push(`min_size: ${input.min_size}`);
-    }
-  }
-
-  if (input.max_size) {
-    const sizeMaxInput = form.querySelector('input[name="adfilter_areamax"]');
-    if (sizeMaxInput) {
-      sizeMaxInput.value = input.max_size;
-      appliedFilters.push(`max_size: ${input.max_size}`);
-    }
-  }
-
-  // Room filters
-  if (input.rooms && Array.isArray(input.rooms)) {
-    input.rooms.forEach(room => {
-      const roomCheckbox = form.querySelector(`input[name="adfilter_rooms_${room === 4 ? '4_more' : room}"]`);
-      if (roomCheckbox) {
-        roomCheckbox.checked = true;
-        appliedFilters.push(`rooms: ${room}`);
-      }
-    });
-  }
-
-  // Bathroom filters
-  if (input.bathrooms && Array.isArray(input.bathrooms)) {
-    input.bathrooms.forEach(bath => {
-      const bathCheckbox = form.querySelector(`input[name="adfilter_baths_${bath}"]`);
-      if (bathCheckbox) {
-        bathCheckbox.checked = true;
-        appliedFilters.push(`bathrooms: ${bath}`);
-      }
-    });
-  }
-
-  // Boolean filters mapping
-  const booleanFilters = {
-    pets_allowed: 'adfilter_housingpetsallowed',
-    air_conditioning: 'adfilter_hasairconditioning',
-    elevator: 'adfilter_lift',
-    terrace: 'adfilter_hasterrace',
-    balcony: 'adfilter_balcony',
-    parking: 'adfilter_parkingspace',
-    pool: 'adfilter_swimmingpool',
-    garden: 'adfilter_garden',
-    exterior: 'adfilter_flatlocation',
-    new_construction: 'adfilter_newconstruction',
-    good_condition: 'adfilter_goodcondition'
-  };
-
-  for (const [key, inputName] of Object.entries(booleanFilters)) {
-    if (input[key] === true) {
-      const checkbox = form.querySelector(`input[name="${inputName}"]`);
-      if (checkbox) {
-        checkbox.checked = true;
-        appliedFilters.push(key);
-      }
-    }
-  }
-
-  // Furnished filter (dropdown)
-  if (input.furnished === true) {
-    const amenityInput = form.querySelector('input[name="adfilter_amenity"]');
-    if (amenityInput) {
-      amenityInput.value = '3'; // Amueblado
-      appliedFilters.push('furnished');
-    }
-  }
-
-  if (appliedFilters.length === 0) {
+  if (!url || appliedFilters.length === 0) {
     return { error: 'No valid filters to apply' };
   }
 
   // Save state and navigate
   saveState();
-  savePendingNavigation(`Applied filters: ${appliedFilters.join(', ')}`);
+  savePendingNavigation(`Applied native filters: ${appliedFilters.join(', ')}`);
 
-  // Submit the form
-  console.log('[AI] Submitting filter form with:', appliedFilters);
+  console.log('[AI] Navigating to filtered URL:', url);
+  window.location.href = url;
 
-  // Trigger form submission by clicking the dropdowns to apply values, then navigate
-  // The filters are applied via URL parameters, so we need to build the URL
-  const url = buildFilterUrl(input);
-  if (url) {
-    window.location.href = url;
-    return { navigating: true, appliedFilters };
-  }
-
-  // Fallback: try triggering change events
-  form.querySelectorAll('input').forEach(input => {
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-
-  return { appliedFilters, note: 'Filters set, page should reload' };
+  return { navigating: true, appliedFilters, url };
 }
 
-function buildFilterUrl(filters) {
-  const currentUrl = new URL(window.location.href);
-  const searchParams = currentUrl.searchParams;
+function buildFilterUrl(filters, appliedFilters = []) {
+  // Get base path (remove existing filter segments and pagination)
+  let basePath = window.location.pathname;
 
-  // Map our filter names to Idealista URL parameters
-  if (filters.max_price) searchParams.set('maxPrice', filters.max_price);
-  if (filters.min_price) searchParams.set('minPrice', filters.min_price);
-  if (filters.min_size) searchParams.set('minSize', filters.min_size);
-  if (filters.max_size) searchParams.set('maxSize', filters.max_size);
+  // Remove pagination
+  basePath = basePath.replace(/pagina-\d+\.htm$/, '');
+  basePath = basePath.replace(/pagina-\d+\/$/, '');
 
-  if (filters.pets_allowed) searchParams.set('petsAllowed', 'true');
-  if (filters.air_conditioning) searchParams.set('airConditioning', 'true');
-  if (filters.elevator) searchParams.set('lift', 'true');
-  if (filters.terrace) searchParams.set('terrace', 'true');
-  if (filters.parking) searchParams.set('garage', 'true');
-  if (filters.pool) searchParams.set('swimmingPool', 'true');
-  if (filters.garden) searchParams.set('garden', 'true');
-  if (filters.exterior) searchParams.set('exterior', 'true');
-  if (filters.furnished) searchParams.set('furnished', 'furnished');
+  // Remove trailing slash for consistent processing
+  if (basePath.endsWith('/')) {
+    basePath = basePath.slice(0, -1);
+  }
 
-  return currentUrl.toString();
+  // Remove existing "con-" filter segments to start fresh
+  const pathParts = basePath.split('/');
+  const cleanParts = pathParts.filter(part => !part.startsWith('con-'));
+  basePath = cleanParts.join('/');
+
+  // Build URL segments for filters
+  const segments = [];
+
+  // Price filters (use URL segments)
+  if (filters.min_price && filters.max_price) {
+    segments.push(`con-precio-desde_${filters.min_price},precio-hasta_${filters.max_price}`);
+    appliedFilters.push(`precio: ${filters.min_price}-${filters.max_price}€`);
+  } else if (filters.min_price) {
+    segments.push(`con-precio-desde_${filters.min_price}`);
+    appliedFilters.push(`precio mín: ${filters.min_price}€`);
+  } else if (filters.max_price) {
+    segments.push(`con-precio-hasta_${filters.max_price}`);
+    appliedFilters.push(`precio máx: ${filters.max_price}€`);
+  }
+
+  // Size filters
+  if (filters.min_size && filters.max_size) {
+    segments.push(`con-metros-cuadrados-mas-de_${filters.min_size},metros-cuadrados-menos-de_${filters.max_size}`);
+    appliedFilters.push(`tamaño: ${filters.min_size}-${filters.max_size}m²`);
+  } else if (filters.min_size) {
+    segments.push(`con-metros-cuadrados-mas-de_${filters.min_size}`);
+    appliedFilters.push(`tamaño mín: ${filters.min_size}m²`);
+  } else if (filters.max_size) {
+    segments.push(`con-metros-cuadrados-menos-de_${filters.max_size}`);
+    appliedFilters.push(`tamaño máx: ${filters.max_size}m²`);
+  }
+
+  // Room filters
+  if (filters.rooms && Array.isArray(filters.rooms)) {
+    const roomSegments = {
+      0: 'estudios',
+      1: 'de-un-dormitorio',
+      2: 'de-dos-dormitorios',
+      3: 'de-tres-dormitorios',
+      4: 'de-cuatro-cinco-habitaciones-o-mas'
+    };
+    filters.rooms.forEach(room => {
+      if (roomSegments[room]) {
+        segments.push(`con-${roomSegments[room]}`);
+        appliedFilters.push(`${room} hab`);
+      }
+    });
+  }
+
+  // Bathroom filters
+  if (filters.bathrooms && Array.isArray(filters.bathrooms)) {
+    const bathSegments = {
+      1: 'un-bano',
+      2: 'dos-banos',
+      3: 'tres-banos-o-mas'
+    };
+    filters.bathrooms.forEach(bath => {
+      if (bathSegments[bath]) {
+        segments.push(`con-${bathSegments[bath]}`);
+        appliedFilters.push(`${bath} baño(s)`);
+      }
+    });
+  }
+
+  // Feature filters mapping to URL segments
+  const featureSegments = {
+    pets_allowed: 'mascotas',
+    air_conditioning: 'aireacondicionado',
+    wardrobes: 'armarios-empotrados',
+    elevator: 'ascensor',
+    terrace: 'terraza',
+    balcony: 'balcon',
+    parking: 'garaje',
+    pool: 'piscina',
+    garden: 'jardin',
+    storage_room: 'trastero',
+    exterior: 'exterior',
+    sea_views: 'vistas-al-mar',
+    luxury: 'lujo',
+    accessible: 'adaptados',
+    new_construction: 'obra-nueva',
+    good_condition: 'buen-estado',
+    to_renovate: 'para-reformar',
+    top_floor: 'ultimas-plantas',
+    intermediate_floor: 'plantas-intermedias',
+    ground_floor: 'solo-bajos',
+    only_flats: 'solo-pisos',
+    penthouses: 'aticos',
+    duplexes: 'duplex',
+    chalets: 'chalets'
+  };
+
+  const featureLabels = {
+    pets_allowed: 'mascotas',
+    air_conditioning: 'aire acond.',
+    wardrobes: 'armarios',
+    elevator: 'ascensor',
+    terrace: 'terraza',
+    balcony: 'balcón',
+    parking: 'garaje',
+    pool: 'piscina',
+    garden: 'jardín',
+    storage_room: 'trastero',
+    exterior: 'exterior',
+    sea_views: 'vistas mar',
+    luxury: 'lujo',
+    accessible: 'accesible',
+    new_construction: 'obra nueva',
+    good_condition: 'buen estado',
+    to_renovate: 'a reformar',
+    top_floor: 'última planta',
+    intermediate_floor: 'planta intermedia',
+    ground_floor: 'bajo',
+    only_flats: 'solo pisos',
+    penthouses: 'áticos',
+    duplexes: 'dúplex',
+    chalets: 'chalets'
+  };
+
+  for (const [key, segment] of Object.entries(featureSegments)) {
+    if (filters[key] === true) {
+      segments.push(`con-${segment}`);
+      appliedFilters.push(featureLabels[key] || key);
+    }
+  }
+
+  // Furnished/equipped kitchen (special handling)
+  if (filters.furnished) {
+    segments.push('con-amueblado_amueblados');
+    appliedFilters.push('amueblado');
+  } else if (filters.equipped_kitchen) {
+    segments.push('con-amueblado_solo-cocina-equipada');
+    appliedFilters.push('cocina equipada');
+  }
+
+  // Rental type
+  if (filters.long_term_rental) {
+    segments.push('con-alquiler-de-larga-temporada');
+    appliedFilters.push('larga temporada');
+  }
+  if (filters.seasonal_rental) {
+    segments.push('con-alquiler-temporal');
+    appliedFilters.push('temporal');
+  }
+
+  // Multimedia
+  if (filters.with_plan) {
+    appliedFilters.push('con plano');
+  }
+  if (filters.virtual_tour) {
+    appliedFilters.push('visita virtual');
+  }
+
+  // Build final URL
+  let finalPath = basePath;
+  if (segments.length > 0) {
+    // Combine multiple con- segments
+    const combinedSegment = segments.join(',').replace(/con-/g, '');
+    finalPath = `${basePath}/con-${combinedSegment}`;
+  }
+
+  // Add trailing slash
+  if (!finalPath.endsWith('/')) {
+    finalPath += '/';
+  }
+
+  // Handle publication date via query params (more reliable)
+  const url = new URL(finalPath, window.location.origin);
+
+  if (filters.published_last_24h) {
+    url.searchParams.set('published', 'last24h');
+    appliedFilters.push('últimas 24h');
+  } else if (filters.published_last_week) {
+    url.searchParams.set('published', 'lastWeek');
+    appliedFilters.push('última semana');
+  } else if (filters.published_last_month) {
+    url.searchParams.set('published', 'lastMonth');
+    appliedFilters.push('último mes');
+  }
+
+  // Multimedia via query params
+  if (filters.with_plan) {
+    url.searchParams.set('hasFloorplan', 'true');
+  }
+  if (filters.virtual_tour) {
+    url.searchParams.set('hasVirtualTour', 'true');
+  }
+
+  return url.toString();
 }
 
 // Tool: Get available filters
@@ -1600,13 +1796,19 @@ function toolGetAvailableFilters() {
 
 // Tool: Get all listings with details (for AI filtering)
 async function toolGetAllListingsDetails(input = {}) {
-  const { include_hidden = false } = input;
+  const { include_hidden = false, max_listings = 15 } = input;
   const listings = findPropertyListings();
 
   // Filter to visible only if requested
-  const targetListings = include_hidden
+  let targetListings = include_hidden
     ? listings
     : listings.filter(l => l.style.display !== 'none');
+
+  // Limit to avoid anti-bot detection
+  if (targetListings.length > max_listings) {
+    console.log(`[AI] Limiting from ${targetListings.length} to ${max_listings} listings to avoid rate limits`);
+    targetListings = targetListings.slice(0, max_listings);
+  }
 
   console.log(`[AI] Fetching details for ${targetListings.length} listings...`);
 
@@ -1614,8 +1816,10 @@ async function toolGetAllListingsDetails(input = {}) {
   addSystemMessage(`Analizando ${targetListings.length} anuncios... Esto puede tardar unos segundos.`);
 
   const results = [];
-  const BATCH_SIZE = 5;
-  const DELAY_MS = 300;
+  // Smaller batch size and longer delays to avoid anti-bot detection
+  const BATCH_SIZE = 2;
+  const MIN_DELAY_MS = 800;
+  const MAX_DELAY_MS = 1500;
 
   for (let i = 0; i < targetListings.length; i += BATCH_SIZE) {
     const batch = targetListings.slice(i, i + BATCH_SIZE);
@@ -1653,9 +1857,10 @@ async function toolGetAllListingsDetails(input = {}) {
 
     results.push(...batchResults);
 
-    // Delay between batches
+    // Random delay between batches to appear more human-like
     if (i + BATCH_SIZE < targetListings.length) {
-      await new Promise(resolve => setTimeout(resolve, DELAY_MS));
+      const delay = MIN_DELAY_MS + Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS);
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
 
@@ -1680,6 +1885,72 @@ async function toolGetAllListingsDetails(input = {}) {
     description: r.description || 'No description available',
     advertiserType: r.advertiserType
   }));
+}
+
+// Tool: Execute custom JavaScript on the page (with user approval)
+async function toolExecutePageScript(input) {
+  const { code, description } = input;
+
+  if (!code) {
+    return { error: 'No code provided' };
+  }
+
+  console.log('[AI] Requesting script execution:', description);
+  console.log('[AI] Code:', code);
+
+  // Show approval dialog to user (non-technical friendly)
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'ai-script-approval-overlay';
+    overlay.innerHTML = `
+      <div class="ai-script-approval-dialog">
+        <h3>🔧 Claude necesita tu permiso</h3>
+        <p class="ai-script-description">${escapeHtml(description)}</p>
+        <details class="ai-script-code-details">
+          <summary>Ver detalles técnicos (opcional)</summary>
+          <div class="ai-script-code">
+            <pre><code>${escapeHtml(code)}</code></pre>
+          </div>
+        </details>
+        <p class="ai-script-note">Esto permite a Claude acceder a más información de la página para ayudarte mejor.</p>
+        <div class="ai-script-buttons">
+          <button class="ai-script-approve">✓ Permitir</button>
+          <button class="ai-script-deny">✗ No permitir</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const approveBtn = overlay.querySelector('.ai-script-approve');
+    const denyBtn = overlay.querySelector('.ai-script-deny');
+
+    approveBtn.addEventListener('click', async () => {
+      overlay.remove();
+      try {
+        // Execute the code
+        const result = eval(code);
+        // Handle promises
+        const finalResult = result instanceof Promise ? await result : result;
+        console.log('[AI] Script result:', finalResult);
+        resolve({ success: true, result: finalResult });
+      } catch (error) {
+        console.error('[AI] Script error:', error);
+        resolve({ error: error.message });
+      }
+    });
+
+    denyBtn.addEventListener('click', () => {
+      overlay.remove();
+      resolve({ denied: true, message: 'User denied script execution' });
+    });
+  });
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 // ============================================================================

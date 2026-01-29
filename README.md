@@ -5,28 +5,12 @@ A Firefox extension that adds an AI-powered assistant to Idealista.com, helping 
 ## Features
 
 - **Chat Sidebar**: Natural language interface to interact with listings
-- **Smart Filtering**: Ask Claude to filter by price, size, rooms, energy rating, or owner type
-- **Listing Analysis**: Get insights on deals, red flags, and recommendations
+- **Native Filter Integration**: Apply Idealista's built-in filters across ALL pages via natural language
+- **AI-Powered Filtering**: Claude reads descriptions and filters by subjective criteria (luminoso, tranquilo, reformado...)
+- **Smart Analysis**: Get insights on deals, red flags, and recommendations
 - **Visual Highlighting**: Claude can highlight specific listings on the page
-- **Detailed Info**: Fetch energy ratings and advertiser details from listing pages
-
-## Screenshot
-
-```
-┌────────────────────────────────────────────────────────────┐
-│                    Idealista Page                          │
-├────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────┐  ┌────────────────────────┐  │
-│  │    Listings Grid        │  │   Chat Sidebar         │  │
-│  │                         │  │                        │  │
-│  │  [Listing 1] [✓]        │  │  Claude: Found 30      │  │
-│  │  [Listing 2]            │  │  listings. 5 from      │  │
-│  │  [Listing 3] [hidden]   │  │  individuals...        │  │
-│  │                         │  │                        │  │
-│  │                         │  │  [User input...]       │  │
-│  └─────────────────────────┘  └────────────────────────┘  │
-└────────────────────────────────────────────────────────────┘
-```
+- **Energy Badges**: See owner type and energy ratings at a glance
+- **Custom Scripts**: Claude can execute JavaScript with your approval for advanced data extraction
 
 ## Installation
 
@@ -45,81 +29,87 @@ A Firefox extension that adds an AI-powered assistant to Idealista.com, helping 
 
 ### 2. Get Your Claude API Key
 
-1. **Create an Anthropic Account**
-   - Go to [console.anthropic.com](https://console.anthropic.com/)
-   - Sign up with email or Google
-   - Verify your email address
-
-2. **Add Credits**
-   - Navigate to **Settings** → **Billing**
-   - Add a payment method
-   - Purchase credits (API is pay-as-you-go)
-   - Cost: ~$3 per million input tokens, ~$15 per million output tokens
-
-3. **Generate an API Key**
-   - Go to **Settings** → **API Keys**
-   - Click **"Create Key"**
-   - Name it (e.g., "Idealista Extension")
-   - **Copy the key** - it starts with `sk-ant-api03-...`
-   - ⚠️ Save it somewhere safe - you won't see it again!
+1. Go to [console.anthropic.com](https://console.anthropic.com/)
+2. Add credits in **Settings** → **Billing**
+3. Generate an API key in **Settings** → **API Keys**
+4. Copy the key (starts with `sk-ant-api03-...`)
 
 ### 3. Configure the Extension
 
 1. Click the extension icon in the Firefox toolbar
-2. Paste your API key in the input field
+2. Paste your API key
 3. Click **"Save API Key"**
-4. You should see "API key saved successfully!"
 
 ## Usage
 
-1. **Navigate to Idealista**
-   - Go to any search page, e.g., [idealista.com/alquiler-viviendas/madrid/](https://www.idealista.com/alquiler-viviendas/madrid/)
-
-2. **Open the Assistant**
-   - Click the 🤖 button in the bottom-right corner
-   - The chat sidebar will slide in
-
-3. **Start Chatting**
-   - Claude will greet you with a summary of the listings
-   - Ask questions or give commands in natural language
+1. Navigate to any Idealista search page
+2. Click the 🤖 button to open the assistant
+3. Chat naturally with Claude
 
 ### Example Commands
 
-**Basic Filters:**
+**Native Filters** (apply to ALL pages - recommended for objective criteria):
 ```
-"Show only apartments from individuals"
-"Hide everything over 1500€"
-"What's the cheapest option?"
-"Which listings have good energy ratings?"
-"Highlight the best deals"
-"Show me apartments with at least 2 rooms under 1200€"
-"Get details on listing 12345678"
-"Reset all filters"
+"Busca pisos de máximo 1200€"
+"Quiero mínimo 60m² y 2 habitaciones"
+"Filtra por los que admitan mascotas"
+"Solo pisos con terraza y aire acondicionado"
+"Busca áticos con ascensor"
+"Muestra solo los publicados en las últimas 24 horas"
+"Pisos exteriores en buen estado"
 ```
 
-**AI-Powered Filters** (Claude reads descriptions and decides):
+**AI-Powered Filters** (current page only - for subjective criteria):
 ```
 "Busca pisos luminosos"
 "Encuentra pisos tranquilos, sin ruido"
 "Muestra solo los reformados recientemente"
 "Quiero pisos con cocina equipada"
 "Busca pisos bien comunicados con metro"
-"Encuentra pisos con vistas"
-"Solo pisos con terraza soleada"
 ```
+
+**Other Commands**:
+```
+"Solo particulares" (hide agencies)
+"¿Cuál es la mejor opción?"
+"Resalta las mejores ofertas"
+"Muestra todo" (reset filters)
+```
+
+## Filter Strategy
+
+The assistant uses two types of filtering:
+
+| Type | Scope | Best For |
+|------|-------|----------|
+| **Native Filters** (`set_search_filters`) | ALL pages | Price, size, rooms, bathrooms, amenities, condition, floor level, publication date |
+| **Client-side Filters** (`filter_listings`) | Current page only | Owner type, energy certificates, AI-powered subjective criteria |
+
+Claude automatically chooses the best approach based on your request.
 
 ## Tools Available to Claude
 
 | Tool | Description |
 |------|-------------|
+| `set_search_filters` | Apply native Idealista filters (affects ALL pages) |
+| `filter_listings` | Show/hide listings on current page |
 | `get_listings` | Get all listings with price, size, rooms, etc. |
-| `filter_listings` | Show/hide listings by criteria |
 | `get_listing_details` | Fetch detailed info from a listing page |
-| `get_all_listings_details` | Fetch descriptions for ALL listings (for AI filtering) |
+| `get_all_listings_details` | Fetch descriptions for AI filtering (rate-limited) |
 | `highlight_listings` | Add visual glow to specific listings |
 | `open_listing` | Open a listing in a new tab |
 | `show_all_listings` | Reset filters and show everything |
 | `get_page_summary` | Get statistics about the current page |
+| `execute_page_script` | Run custom JS with user approval |
+| Pagination tools | Navigate between pages |
+
+## Anti-Bot Protection
+
+The extension includes safeguards to avoid triggering Idealista's anti-bot detection:
+- Rate limiting: Max 15 listings fetched at once by default
+- Random delays between requests (800-1500ms)
+- Small batch sizes (2 requests at a time)
+- Aggressive caching to minimize repeated requests
 
 ## File Structure
 
@@ -129,9 +119,7 @@ idealista-firefox-plugin/
 ├── content.js         # Chat UI + Claude client + tools
 ├── content.css        # Sidebar styling
 ├── background.js      # API key management
-├── popup.html         # API key configuration UI
-├── popup.js           # Popup logic
-├── popup.css          # Popup styling
+├── popup.html/js/css  # API key configuration UI
 └── icons/             # Extension icons
 ```
 
@@ -140,25 +128,23 @@ idealista-firefox-plugin/
 - Your API key is stored locally in Firefox's sync storage
 - API calls go directly from your browser to Anthropic's servers
 - No data is sent to any third-party servers
-- Listing data stays in your browser
+- Script execution requires explicit user approval
 
 ## Troubleshooting
 
 ### "Please set your Claude API key"
-- Click the extension icon and add your API key
+Click the extension icon and add your API key.
 
 ### Chat not appearing
-- Make sure you're on an Idealista search page (URL contains `/alquiler-` or `/venta-`)
-- Try refreshing the page
+Make sure you're on an Idealista search page (URL contains `/alquiler-` or `/venta-`).
 
-### API errors
-- Verify your API key is correct
-- Check you have credits in your Anthropic account
-- Ensure you're not hitting rate limits
+### Rate limiting errors
+Wait a few seconds and try again. The extension limits requests to avoid detection.
 
-### Listings not detected
-- The extension looks for `article.item` elements
-- Idealista may have changed their page structure
+### Filters not working as expected
+- Native filters reload the page - this is expected
+- Client-side filters only affect the current page
+- Use "Muestra todo" to reset all filters
 
 ## Development
 
@@ -174,18 +160,13 @@ idealista-firefox-plugin/
 
 ## Cost Estimation
 
-The extension uses Claude Sonnet. Typical usage:
+Uses Claude Sonnet. Typical costs:
 - Opening a page: ~500 tokens
-- Simple filter request: ~1000 tokens
+- Simple filter: ~1000 tokens
 - Complex analysis: ~2000 tokens
 
-At ~$3/million input tokens, expect to spend a few cents per session.
+Expect a few cents per session at current API pricing.
 
 ## License
 
 MIT
-
-## Acknowledgments
-
-- [Anthropic](https://anthropic.com) for Claude API
-- [Idealista](https://idealista.com) for the property search platform
