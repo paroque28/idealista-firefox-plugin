@@ -78,12 +78,22 @@ A Firefox extension that adds an AI-powered assistant to Idealista.com, helping 
 
 ## Filter Strategy
 
-The assistant uses two types of filtering:
+The assistant uses three types of filtering:
 
 | Type | Scope | Best For |
 |------|-------|----------|
 | **Native Filters** (`set_search_filters`) | ALL pages | Price, size, rooms, bathrooms, amenities, condition, floor level, publication date |
-| **Client-side Filters** (`filter_listings`) | Current page only | Owner type, energy certificates, AI-powered subjective criteria |
+| **Smart Filters** (`filter_listings` with `smart_filter`) | ALL pages* | AI-powered subjective criteria (luminoso, tranquilo, reformado) |
+| **Basic Filters** (`filter_listings`) | Current page only | Owner type, energy certificates |
+
+*Smart filters store keywords (not listing IDs), so they're automatically re-applied when you navigate to another page.
+
+### How Smart Filters Work
+
+When you ask for subjective criteria like "pisos luminosos":
+1. Claude reads descriptions and identifies relevant keywords (luminoso, luz natural, soleado, etc.)
+2. These keywords are stored and used to filter listings on ANY page
+3. On page navigation, descriptions are fetched and filtered automatically
 
 Claude automatically chooses the best approach based on your request.
 
