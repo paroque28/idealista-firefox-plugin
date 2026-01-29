@@ -58,6 +58,14 @@ Be proactive about pointing out:
 Keep responses concise - users are browsing, not reading essays.
 Use Spanish for responses since this is a Spanish website, but understand English too.
 
+**CRITICAL - Listing IDs**:
+When mentioning specific listings, ALWAYS include the listing ID in your response. Format: "**975€ - Marina del Prat** (ID: 101935087)"
+This is essential because:
+- You need the exact ID to open listings or highlight them
+- IDs are the only reliable way to reference listings later
+- Never guess or make up an ID - only use IDs from tool results
+- If user asks to open a listing, use ONLY the ID you previously mentioned
+
 Important notes:
 - Prices are in EUR (€)
 - Sizes are in square meters (m²)
@@ -154,14 +162,14 @@ const TOOLS = [
   },
   {
     name: 'highlight_listings',
-    description: 'Visually highlight specific listings on the page with a glowing border to draw attention to them',
+    description: 'Visually highlight specific listings on the page with a glowing border. IMPORTANT: Only use listing IDs that you received from get_listings or get_all_listings_details. Never guess or make up IDs.',
     input_schema: {
       type: 'object',
       properties: {
         listing_ids: {
           type: 'array',
           items: { type: 'string' },
-          description: 'IDs of listings to highlight'
+          description: 'Exact IDs of listings to highlight (from previous tool results)'
         },
         color: {
           type: 'string',
@@ -174,13 +182,13 @@ const TOOLS = [
   },
   {
     name: 'open_listing',
-    description: 'Open a listing in a new browser tab',
+    description: 'Open a listing in a new browser tab. IMPORTANT: Only use listing IDs that you received from get_listings or get_all_listings_details. Never guess or make up IDs.',
     input_schema: {
       type: 'object',
       properties: {
         listing_id: {
           type: 'string',
-          description: 'The ID of the listing to open'
+          description: 'The exact ID of the listing to open (from previous tool results)'
         }
       },
       required: ['listing_id']
