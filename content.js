@@ -308,7 +308,7 @@ async function handleSendMessage() {
   if (!message || isProcessing) return;
 
   if (!apiKey) {
-    addSystemMessage('Please set your Claude API key in the extension popup first.');
+    addSystemMessage('Configura tu API key de Claude en el popup de la extensión (haz clic en el icono de la extensión en la barra de herramientas).');
     return;
   }
 
@@ -411,8 +411,23 @@ async function callClaudeAPI(messages) {
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error?.message || 'API request failed');
+    const errorData = await response.json();
+    const errorMessage = errorData.error?.message || 'API request failed';
+
+    // Provide user-friendly error messages
+    if (errorMessage.includes('credit balance is too low')) {
+      throw new Error('No tienes créditos en tu cuenta de Anthropic. Ve a console.anthropic.com → Settings → Billing para añadir créditos.');
+    } else if (errorMessage.includes('invalid x-api-key') || errorMessage.includes('Invalid API Key')) {
+      throw new Error('API key inválida. Verifica tu clave en el popup de la extensión.');
+    } else if (errorMessage.includes('rate limit')) {
+      throw new Error('Demasiadas peticiones. Espera unos segundos e inténtalo de nuevo.');
+    } else if (response.status === 401) {
+      throw new Error('Error de autenticación. Verifica tu API key.');
+    } else if (response.status === 500) {
+      throw new Error('Error del servidor de Anthropic. Inténtalo de nuevo en unos minutos.');
+    }
+
+    throw new Error(errorMessage);
   }
 
   return await response.json();
