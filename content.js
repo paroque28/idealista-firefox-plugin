@@ -420,10 +420,11 @@ async function init() {
   // Add energy badges to all listings
   addEnergyBadgesToListings();
 
-  // Apply saved filters
+  // Apply saved filters and update display
   if (Object.keys(currentFilters).length > 0) {
     applyFilters(currentFilters);
   }
+  updateActiveFiltersDisplay();
 
   // Check for pending navigation (page was reloaded after navigation)
   const pendingNav = loadPendingNavigation();
@@ -658,6 +659,7 @@ function createChatUI() {
         <button class="ai-close-btn" title="Close">&times;</button>
       </div>
     </div>
+    <div class="ai-active-filters" id="ai-active-filters"></div>
     <div class="ai-messages" id="ai-messages"></div>
     <div class="ai-input-area">
       <textarea id="ai-input" placeholder="Ask me about these listings..." rows="2"></textarea>
@@ -721,10 +723,79 @@ function handleClearHistory() {
     document.getElementById('ai-messages').innerHTML = '';
     // Reset filters
     toolShowAllListings();
+    updateActiveFiltersDisplay();
     // Refresh badges
     document.querySelectorAll('.idealista-ai-badge').forEach(b => b.remove());
     addEnergyBadgesToListings();
   }
+}
+
+function updateActiveFiltersDisplay() {
+  const container = document.getElementById('ai-active-filters');
+  if (!container) return;
+
+  const filterLabels = {
+    owner_type: { label: 'Tipo', values: { individual: 'Particular', agency: 'Agencia' } },
+    max_price: { label: 'Precio máx', suffix: '€' },
+    min_price: { label: 'Precio mín', suffix: '€' },
+    min_size: { label: 'Tamaño mín', suffix: 'm²' },
+    max_size: { label: 'Tamaño máx', suffix: 'm²' },
+    min_rooms: { label: 'Hab. mín' },
+    min_energy_rating: { label: 'Energía mín' }
+  };
+
+  const activeFilters = Object.entries(currentFilters)
+    .filter(([key, value]) => value !== undefined && value !== null && value !== 'all')
+    .map(([key, value]) => {
+      const config = filterLabels[key] || { label: key };
+      let displayValue = value;
+
+      if (config.values && config.values[value]) {
+        displayValue = config.values[value];
+      } else if (config.suffix) {
+        displayValue = `${value}${config.suffix}`;
+      }
+
+      return { key, label: config.label, value: displayValue };
+    });
+
+  if (activeFilters.length === 0) {
+    container.innerHTML = '';
+    container.style.display = 'none';
+    return;
+  }
+
+  container.style.display = 'flex';
+  container.innerHTML = activeFilters.map(filter => `
+    <span class="ai-filter-tag" data-filter-key="${filter.key}">
+      ${filter.label}: ${filter.value}
+      <button class="ai-filter-remove" title="Eliminar filtro">&times;</button>
+    </span>
+  `).join('');
+
+  // Add click handlers
+  container.querySelectorAll('.ai-filter-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const tag = e.target.closest('.ai-filter-tag');
+      const filterKey = tag.getAttribute('data-filter-key');
+      removeFilter(filterKey);
+    });
+  });
+}
+
+function removeFilter(filterKey) {
+  console.log('[AI] Removing filter:', filterKey);
+  delete currentFilters[filterKey];
+  saveState();
+
+  // Reapply remaining filters
+  if (Object.keys(currentFilters).length > 0) {
+    applyFilters(currentFilters);
+  } else {
+    toolShowAllListings();
+  }
+
+  updateActiveFiltersDisplay();
 }
 
 function addMessage(role, content) {
@@ -996,7 +1067,9 @@ function toolFilterListings(input) {
   currentFilters = { ...currentFilters, ...input };
   saveState();
 
-  return applyFilters(input);
+  const result = applyFilters(input);
+  updateActiveFiltersDisplay();
+  return result;
 }
 
 function applyFilters(input) {
