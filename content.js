@@ -476,8 +476,19 @@ let sidebarVisible = false;
 // ============================================================================
 
 function getStorageKey() {
-  // Use search path as key so different searches have different histories
-  const path = window.location.pathname.replace(/pagina-\d+\.htm$/, '');
+  // Use BASE search path as key so filters don't change the storage key
+  // This ensures chat history persists when applying/removing filters
+  let path = window.location.pathname;
+
+  // Remove pagination
+  path = path.replace(/pagina-\d+\.htm$/, '');
+  path = path.replace(/pagina-\d+\/$/, '');
+
+  // Remove filter segments (con-*) to get the base search path
+  // e.g., /alquiler-viviendas/barcelona/con-terraza,precio-hasta_1500/ → /alquiler-viviendas/barcelona/
+  const parts = path.split('/').filter(p => p && !p.startsWith('con-'));
+  path = '/' + parts.join('/') + '/';
+
   return `${STORAGE_KEY}-${path}`;
 }
 
