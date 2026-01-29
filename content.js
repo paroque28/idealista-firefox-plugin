@@ -39,10 +39,21 @@ Be proactive about pointing out:
    Note: filter_listings only affects the CURRENT PAGE. Hidden listings will reappear on other pages.
 
 3. **AI Filtering** (for subjective criteria only):
-   Use get_all_listings_details to fetch descriptions, then analyze them and use filter_listings with listing_ids.
-   Examples: "pisos luminosos", "sin ruido", "bien comunicado", "reformado recientemente"
+   Use get_all_listings_details to fetch descriptions, analyze them to identify relevant keywords, then use filter_listings with smart_filter (NOT listing_ids).
 
-   CAUTION: This only filters the current page. For best results, first apply native filters to narrow down results.
+   smart_filter format:
+   {
+     "label": "Luminosos",  // Short label shown to user
+     "keywords": ["luminoso", "luz natural", "soleado", "mucha luz", "muy luminoso"],
+     "exclude_keywords": ["interior", "sin luz"]  // Optional
+   }
+
+   Examples:
+   - "pisos luminosos" → keywords: ["luminoso", "luz natural", "soleado", "orientación sur"]
+   - "tranquilos" → keywords: ["tranquilo", "silencioso", "zona tranquila"], exclude: ["ruidoso", "bullicioso"]
+   - "reformados" → keywords: ["reformado", "recién reformado", "a estrenar", "nuevo"]
+
+   IMPORTANT: smart_filter persists across pages (unlike listing_ids). The keywords are searched in descriptions automatically on each page.
 
 Keep responses concise - users are browsing, not reading essays.
 Use Spanish for responses since this is a Spanish website, but understand English too.
@@ -68,7 +79,7 @@ const TOOLS = [
   },
   {
     name: 'filter_listings',
-    description: 'Show or hide listings on the CURRENT PAGE ONLY. Use this for: (1) AI-powered subjective filtering after reading descriptions, (2) owner type filtering (particular/agency), (3) energy certificate requirements. For objective criteria like price/size/rooms/amenities, ALWAYS use set_search_filters instead as it applies to ALL pages.',
+    description: 'Show or hide listings on the CURRENT PAGE ONLY. Use this for: (1) AI-powered subjective filtering after reading descriptions, (2) owner type filtering (particular/agency), (3) energy certificate requirements. For objective criteria like price/size/rooms/amenities, ALWAYS use set_search_filters instead as it applies to ALL pages. For AI filtering, use smart_filter with keywords instead of listing_ids so filters persist across pages.',
     input_schema: {
       type: 'object',
       properties: {
@@ -101,7 +112,28 @@ const TOOLS = [
         listing_ids: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Show only these specific listing IDs (hide all others)'
+          description: 'DEPRECATED: Use smart_filter instead. Show only these specific listing IDs (does NOT persist across pages)'
+        },
+        smart_filter: {
+          type: 'object',
+          description: 'AI-powered filter that persists across pages. Filters listings by keywords found in descriptions.',
+          properties: {
+            label: {
+              type: 'string',
+              description: 'Short label shown to user (e.g., "Luminosos", "Tranquilos", "Reformados")'
+            },
+            keywords: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Keywords to search for in listing descriptions (case-insensitive). Listing shown if ANY keyword matches. Example: ["luminoso", "luz natural", "soleado", "mucha luz"]'
+            },
+            exclude_keywords: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Keywords that disqualify a listing (e.g., ["interior", "sin luz"] for bright apartments)'
+            }
+          },
+          required: ['label', 'keywords']
         }
       }
     }
@@ -569,9 +601,17 @@ async function init() {
 
   // Apply saved filters and update display
   if (Object.keys(currentFilters).length > 0) {
-    applyFilters(currentFilters);
+    // applyFilters is async (may need to fetch descriptions for smart filters)
+    applyFilters(currentFilters).then(() => {
+      updateActiveFiltersDisplay();
+      // Show message if smart filter is active
+      if (currentFilters.smart_filter) {
+        console.log('[AI] Smart filter re-applied:', currentFilters.smart_filter.label);
+      }
+    });
+  } else {
+    updateActiveFiltersDisplay();
   }
-  updateActiveFiltersDisplay();
 
   // Check for pending navigation (page was reloaded after navigation)
   const pendingNav = loadPendingNavigation();
@@ -751,7 +791,7 @@ async function fetchMissingEnergyRatings(listings) {
     const batch = toFetch.slice(i, i + BATCH_SIZE);
     console.log(`[AI] Fetching batch ${Math.floor(i/BATCH_SIZE) + 1}:`, batch.map(b => b.id));
 
-    await Promise.all(batch.map(async ({ id, listing }) => {
+    await Promise.all(batch.map(async ({ id }) => {
       try {
         const details = await toolGetListingDetails({ listing_id: id });
         console.log(`[AI] Fetched ${id}:`, details?.energyRating || 'no rating', details?.error || '');
@@ -893,8 +933,13 @@ function updateActiveFiltersDisplay() {
   };
 
   const activeFilters = Object.entries(currentFilters)
-    .filter(([key, value]) => value !== undefined && value !== null && value !== 'all')
+    .filter(([_key, value]) => value !== undefined && value !== null && value !== 'all')
     .map(([key, value]) => {
+      // Special handling for smart_filter
+      if (key === 'smart_filter' && value?.label) {
+        return { key, label: '🤖 Filtro IA', value: value.label, isSmartFilter: true };
+      }
+
       const config = filterLabels[key] || { label: key };
       let displayValue = value;
 
@@ -902,10 +947,13 @@ function updateActiveFiltersDisplay() {
         displayValue = config.values[value];
       } else if (config.suffix) {
         displayValue = `${value}${config.suffix}`;
+      } else if (typeof value === 'object') {
+        return null; // Skip complex objects we don't know how to display
       }
 
       return { key, label: config.label, value: displayValue };
-    });
+    })
+    .filter(f => f !== null);
 
   if (activeFilters.length === 0) {
     container.innerHTML = '';
@@ -915,7 +963,7 @@ function updateActiveFiltersDisplay() {
 
   container.style.display = 'flex';
   container.innerHTML = activeFilters.map(filter => `
-    <span class="ai-filter-tag" data-filter-key="${filter.key}">
+    <span class="ai-filter-tag ${filter.isSmartFilter ? 'ai-filter-smart' : ''}" data-filter-key="${filter.key}">
       ${filter.label}: ${filter.value}
       <button class="ai-filter-remove" title="Eliminar filtro">&times;</button>
     </span>
@@ -931,14 +979,14 @@ function updateActiveFiltersDisplay() {
   });
 }
 
-function removeFilter(filterKey) {
+async function removeFilter(filterKey) {
   console.log('[AI] Removing filter:', filterKey);
   delete currentFilters[filterKey];
   saveState();
 
   // Reapply remaining filters
   if (Object.keys(currentFilters).length > 0) {
-    applyFilters(currentFilters);
+    await applyFilters(currentFilters);
   } else {
     toolShowAllListings();
   }
@@ -1226,30 +1274,59 @@ function toolGetListings() {
 }
 
 // Tool: Filter listings
-function toolFilterListings(input) {
-  // Save filters for persistence
-  currentFilters = { ...currentFilters, ...input };
+async function toolFilterListings(input) {
+  // Save filters for persistence (but not listing_ids as they're page-specific)
+  const filtersToSave = { ...input };
+  delete filtersToSave.listing_ids; // Don't persist listing_ids
+  currentFilters = { ...currentFilters, ...filtersToSave };
   saveState();
 
-  const result = applyFilters(input);
+  const result = await applyFilters(input);
   updateActiveFiltersDisplay();
   return result;
 }
 
-function applyFilters(input) {
+async function applyFilters(input) {
   const listings = findPropertyListings();
   let hiddenCount = 0;
   let shownCount = 0;
+
+  // If smart_filter is being applied, we may need to fetch descriptions first
+  if (input.smart_filter) {
+    await ensureDescriptionsLoaded(listings);
+  }
 
   for (const listing of listings) {
     const data = extractPropertyData(listing);
     let shouldHide = false;
 
-    // Filter by specific IDs
+    // Filter by specific IDs (deprecated, doesn't persist across pages)
     if (input.listing_ids && input.listing_ids.length > 0) {
       shouldHide = !input.listing_ids.includes(data.id);
-    } else {
-      // Apply other filters
+    }
+
+    // Smart filter - keyword-based filtering that persists across pages
+    if (input.smart_filter && input.smart_filter.keywords) {
+      const cached = listingDetailsCache[data.id];
+      const description = (cached?.description || '').toLowerCase();
+      const title = (data.title || '').toLowerCase();
+      const searchText = `${title} ${description}`;
+
+      // Check if any keyword matches
+      const keywords = input.smart_filter.keywords.map(k => k.toLowerCase());
+      const hasMatch = keywords.some(keyword => searchText.includes(keyword));
+
+      // Check if any exclude keyword matches
+      const excludeKeywords = (input.smart_filter.exclude_keywords || []).map(k => k.toLowerCase());
+      const hasExclude = excludeKeywords.some(keyword => searchText.includes(keyword));
+
+      if (!hasMatch || hasExclude) {
+        shouldHide = true;
+      }
+    }
+
+    // Apply other filters (these stack with smart_filter)
+    if (!shouldHide) {
       if (input.owner_type && input.owner_type !== 'all') {
         const targetType = input.owner_type === 'individual' ? 'owner' : 'agency';
         if (data.ownerType !== targetType && data.ownerType !== 'unknown') {
@@ -1302,6 +1379,64 @@ function applyFilters(input) {
   }
 
   return { shown: shownCount, hidden: hiddenCount, filters: input };
+}
+
+// Ensure descriptions are loaded for smart filtering
+async function ensureDescriptionsLoaded(listings) {
+  const needFetch = [];
+
+  for (const listing of listings) {
+    const data = extractPropertyData(listing);
+    if (!data.id) continue;
+
+    const cached = listingDetailsCache[data.id];
+    if (!cached?.description) {
+      needFetch.push({ id: data.id, listing });
+    }
+  }
+
+  if (needFetch.length === 0) {
+    console.log('[AI] All descriptions already cached');
+    return;
+  }
+
+  console.log(`[AI] Fetching descriptions for ${needFetch.length} listings for smart filter...`);
+  addSystemMessage(`Cargando descripciones para filtro inteligente (${needFetch.length} anuncios)...`);
+
+  const BATCH_SIZE = 2;
+  const MIN_DELAY_MS = 800;
+  const MAX_DELAY_MS = 1500;
+
+  for (let i = 0; i < needFetch.length; i += BATCH_SIZE) {
+    const batch = needFetch.slice(i, i + BATCH_SIZE);
+
+    await Promise.all(batch.map(async ({ id }) => {
+      try {
+        const details = await toolGetListingDetails({ listing_id: id });
+        if (details && !details.error) {
+          listingDetailsCache[id] = details;
+        }
+      } catch (error) {
+        console.error(`[AI] Error fetching details for ${id}:`, error);
+      }
+    }));
+
+    saveDetailsCache();
+
+    if (i + BATCH_SIZE < needFetch.length) {
+      const delay = MIN_DELAY_MS + Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  // Remove loading message
+  const messages = document.getElementById('ai-messages');
+  const systemMsgs = messages?.querySelectorAll('.ai-message-system');
+  if (systemMsgs?.length > 0) {
+    systemMsgs[systemMsgs.length - 1].remove();
+  }
+
+  console.log('[AI] Finished loading descriptions for smart filter');
 }
 
 // Tool: Get listing details
