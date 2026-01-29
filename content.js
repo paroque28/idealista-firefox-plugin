@@ -1558,19 +1558,25 @@ ${conversationHistory}
 
 TONO: ${tone === 'professional' ? 'Profesional y confiable' : tone === 'friendly' ? 'Cercano y simpático' : tone === 'formal' ? 'Muy formal' : tone === 'enthusiastic' ? 'Entusiasta' : 'Directo y breve'}
 
-⚠️ REGLA CRÍTICA - NO INVENTAR NADA:
-- SOLO usa información que esté en el perfil del usuario o en la conversación
-- NO inventes proyectos, motivos de viaje, o razones que no existan
-- NO inventes duraciones específicas si no las conoces
-- Si es TEMPORAL y no hay razón específica en el perfil, usa la situación REAL: trabajo remoto permite flexibilidad de ubicación
-- Mejor ser honesto y vago que mentir con detalles específicos
+⚠️ REGLAS CRÍTICAS:
 
-INSTRUCCIONES:
-1. Lee la descripción del anuncio y adapta tu respuesta
-2. USA SOLO información real del perfil
-3. Si es temporal y no hay razón específica: di que trabajas remoto y buscas establecerte en la ciudad por una temporada (verdad, no especifica duración falsa)
-4. ${tone === 'brief' ? 'Máximo 3 líneas' : 'Máximo 5 líneas'}
-5. No repitas saludos si ya se saludaron
+1. NO INVENTAR NADA:
+   - SOLO usa información real del perfil
+   - NO inventes proyectos, motivos, o duraciones
+   - Si no hay razón temporal específica, sé vago pero honesto
+
+2. NO REPETIR INFORMACIÓN YA COMPARTIDA:
+   - Idealista YA comparte automáticamente: pareja/single, ingresos, mascotas, flexibilidad
+   - El primer mensaje YA dijo: que son pareja, trabajan remoto, empresas donde trabajan
+   - NO repitas nada de esto - el propietario YA LO SABE
+   - Solo responde a la pregunta específica que hace el propietario
+
+3. RESPONDE DIRECTAMENTE:
+   - Si pregunta "¿por cuánto tiempo?" → responde el tiempo, no repitas quién eres
+   - Si pregunta "¿cuándo podéis entrar?" → responde la fecha, no repitas tu situación
+   - Sé conciso y directo
+
+4. ${tone === 'brief' ? 'Máximo 2-3 líneas' : 'Máximo 3-4 líneas'} - menos es más
 
 Escribe SOLO el mensaje, sin explicaciones.`;
 
@@ -1624,38 +1630,35 @@ Escribe SOLO el mensaje, sin explicaciones.`;
     // SEGUNDA ITERACIÓN: Revisar y humanizar
     loadingText.textContent = 'Humanizando mensaje...';
 
-    const reviewPrompt = `Eres un experto en comunicación. Revisa este mensaje que alguien quiere enviar a un propietario para alquilar un piso.
+    const reviewPrompt = `Revisa este mensaje para un propietario de piso.
 
 MENSAJE A REVISAR:
 "${firstDraft}"
 
-INFORMACIÓN REAL DEL USUARIO (NO AÑADIR NADA QUE NO ESTÉ AQUÍ):
-${profileContext || 'No disponible'}
+LO QUE EL PROPIETARIO YA SABE (del primer mensaje y perfil compartido de Idealista):
+- Que son pareja
+- Que trabajan remoto (él en empresa americana, ella en ONG holandesa)
+- Ingresos: 5.000€/mes
+- Sin mascotas
+- Tienen flexibilidad
 
-CONTEXTO:
-- Es un mensaje para alquilar un piso en España
-- ${rentalType === 'temporal' ? 'Es alquiler TEMPORAL' : rentalType === 'larga_estancia' ? 'Es alquiler de LARGA ESTANCIA' : 'Tipo de alquiler no claro'}
+ÚLTIMA PREGUNTA/MENSAJE DEL PROPIETARIO: "${context.messages.filter(m => m.role === 'other').pop()?.content || 'No disponible'}"
 
 EVALÚA:
-1. ¿Suena a mensaje generado por IA? (frases perfectas, demasiado formal, "solvencia", "documentación lista", "estaría encantado")
-2. ¿INVENTA información que no está en el perfil? (proyectos falsos, duraciones inventadas, motivos ficticios)
-3. ¿Es demasiado largo?
-4. ¿Suena como escribiría una persona real por WhatsApp?
+1. ¿REPITE información que el propietario ya sabe? → ELIMINAR
+2. ¿Inventa información? (proyectos falsos, duraciones específicas inventadas) → ELIMINAR
+3. ¿Responde directamente a la pregunta? → Si no, CORREGIR
+4. ¿Es demasiado largo o formal? → ACORTAR
+5. ¿Suena a IA? ("estaría encantado", "no dudes en", "documentación lista") → HUMANIZAR
 
-⚠️ REGLA CRÍTICA: NO AÑADIR INFORMACIÓN INVENTADA
-- Si el mensaje original inventa un "proyecto de X meses" que NO está en el perfil → ELIMÍNALO
-- Si inventa razones o motivos → ELIMÍNALOS
-- Solo mantén información que sea VERDAD según el perfil
-- Mejor ser vago ("nos establecemos en Barcelona una temporada") que mentir ("proyecto de 8 meses")
+REESCRIBE para que:
+- Responda SOLO a lo que pregunta el propietario
+- NO repita quiénes son, dónde trabajan, ingresos, etc.
+- Sea corto y directo (2-3 líneas máximo)
+- Suene como un mensaje real de WhatsApp
+- Si es temporal y no hay razón real, sea vago ("una temporada", "unos meses")
 
-REESCRIBE el mensaje para que:
-- Suene 100% humano y natural
-- NO contenga información inventada
-- Sea conciso
-- Use lenguaje coloquial pero educado
-- Si es temporal y no hay razón real, simplemente di que trabajan remoto y buscan establecerse una temporada
-
-Responde SOLO con el mensaje mejorado, sin explicaciones.`;
+Responde SOLO con el mensaje corregido.`;
 
     const response2 = await fetch(CLAUDE_API_URL, {
       method: 'POST',
