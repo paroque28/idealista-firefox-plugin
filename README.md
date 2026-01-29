@@ -85,6 +85,7 @@ A Firefox extension that adds an AI-powered assistant to Idealista.com, helping 
 
 ### Example Commands
 
+**Basic Filters:**
 ```
 "Show only apartments from individuals"
 "Hide everything over 1500€"
@@ -96,6 +97,17 @@ A Firefox extension that adds an AI-powered assistant to Idealista.com, helping 
 "Reset all filters"
 ```
 
+**AI-Powered Filters** (Claude reads descriptions and decides):
+```
+"Busca pisos luminosos"
+"Encuentra pisos tranquilos, sin ruido"
+"Muestra solo los reformados recientemente"
+"Quiero pisos con cocina equipada"
+"Busca pisos bien comunicados con metro"
+"Encuentra pisos con vistas"
+"Solo pisos con terraza soleada"
+```
+
 ## Tools Available to Claude
 
 | Tool | Description |
@@ -103,6 +115,7 @@ A Firefox extension that adds an AI-powered assistant to Idealista.com, helping 
 | `get_listings` | Get all listings with price, size, rooms, etc. |
 | `filter_listings` | Show/hide listings by criteria |
 | `get_listing_details` | Fetch detailed info from a listing page |
+| `get_all_listings_details` | Fetch descriptions for ALL listings (for AI filtering) |
 | `highlight_listings` | Add visual glow to specific listings |
 | `open_listing` | Open a listing in a new tab |
 | `show_all_listings` | Reset filters and show everything |
