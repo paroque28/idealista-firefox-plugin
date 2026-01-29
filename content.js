@@ -187,6 +187,98 @@ const TOOLS = [
       properties: {},
       required: []
     }
+  },
+  {
+    name: 'set_search_filters',
+    description: 'Apply native Idealista search filters. This will reload the page with the new filters applied. Available filters: price range, size range, rooms, bathrooms, amenities (pets, AC, elevator, etc.), and more.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        min_price: {
+          type: 'number',
+          description: 'Minimum price in EUR'
+        },
+        max_price: {
+          type: 'number',
+          description: 'Maximum price in EUR'
+        },
+        min_size: {
+          type: 'number',
+          description: 'Minimum size in m²'
+        },
+        max_size: {
+          type: 'number',
+          description: 'Maximum size in m²'
+        },
+        rooms: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'Number of rooms (0=studio, 1, 2, 3, 4=4 or more)'
+        },
+        bathrooms: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'Number of bathrooms (1, 2, 3=3 or more)'
+        },
+        pets_allowed: {
+          type: 'boolean',
+          description: 'Must allow pets'
+        },
+        air_conditioning: {
+          type: 'boolean',
+          description: 'Must have air conditioning'
+        },
+        elevator: {
+          type: 'boolean',
+          description: 'Must have elevator'
+        },
+        terrace: {
+          type: 'boolean',
+          description: 'Must have terrace'
+        },
+        balcony: {
+          type: 'boolean',
+          description: 'Must have balcony'
+        },
+        parking: {
+          type: 'boolean',
+          description: 'Must have parking/garage'
+        },
+        pool: {
+          type: 'boolean',
+          description: 'Must have swimming pool'
+        },
+        garden: {
+          type: 'boolean',
+          description: 'Must have garden'
+        },
+        furnished: {
+          type: 'boolean',
+          description: 'Must be furnished'
+        },
+        exterior: {
+          type: 'boolean',
+          description: 'Must be exterior (not interior)'
+        },
+        new_construction: {
+          type: 'boolean',
+          description: 'New construction only'
+        },
+        good_condition: {
+          type: 'boolean',
+          description: 'Good condition only'
+        }
+      }
+    }
+  },
+  {
+    name: 'get_available_filters',
+    description: 'Get the current filter values and available options from the Idealista filter sidebar',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
   }
 ];
 
@@ -212,10 +304,12 @@ function getStorageKey() {
 
 function saveState() {
   try {
+    const inputEl = document.getElementById('ai-input');
     const state = {
       chatMessages,
       currentFilters,
       sidebarVisible,
+      pendingInput: inputEl?.value || '',
       savedAt: Date.now()
     };
     localStorage.setItem(getStorageKey(), JSON.stringify(state));
@@ -223,6 +317,38 @@ function saveState() {
     console.error('Error saving state:', e);
   }
 }
+
+function savePendingNavigation(message) {
+  try {
+    const state = {
+      pendingNavigation: true,
+      navigationMessage: message,
+      savedAt: Date.now()
+    };
+    localStorage.setItem(`${getStorageKey()}-nav`, JSON.stringify(state));
+  } catch (e) {
+    console.error('Error saving navigation state:', e);
+  }
+}
+
+function loadPendingNavigation() {
+  try {
+    const saved = localStorage.getItem(`${getStorageKey()}-nav`);
+    if (saved) {
+      localStorage.removeItem(`${getStorageKey()}-nav`);
+      const state = JSON.parse(saved);
+      // Only use if saved recently (within 30 seconds)
+      if (Date.now() - state.savedAt < 30000) {
+        return state;
+      }
+    }
+  } catch (e) {
+    console.error('Error loading navigation state:', e);
+  }
+  return null;
+}
+
+let pendingInput = '';
 
 function loadState() {
   try {
@@ -234,6 +360,8 @@ function loadState() {
         chatMessages = state.chatMessages || [];
         currentFilters = state.currentFilters || {};
         sidebarVisible = state.sidebarVisible || false;
+        pendingInput = state.pendingInput || '';
+        console.log('[AI] Loaded state:', { messages: chatMessages.length, filters: currentFilters, sidebarVisible, pendingInput: pendingInput.length > 0 });
         return true;
       }
     }
@@ -274,8 +402,18 @@ async function init() {
   // Restore chat messages if any
   if (hasState && chatMessages.length > 0) {
     restoreChatMessages();
-    if (sidebarVisible) {
+    // Always open sidebar if we have history
+    if (!sidebarVisible) {
       toggleSidebar();
+    }
+  }
+
+  // Restore pending input
+  if (pendingInput) {
+    const inputEl = document.getElementById('ai-input');
+    if (inputEl) {
+      inputEl.value = pendingInput;
+      console.log('[AI] Restored pending input');
     }
   }
 
@@ -287,8 +425,24 @@ async function init() {
     applyFilters(currentFilters);
   }
 
-  // Send proactive greeting only if no history
-  if (!hasState || chatMessages.length === 0) {
+  // Check for pending navigation (page was reloaded after navigation)
+  const pendingNav = loadPendingNavigation();
+  if (pendingNav && pendingNav.pendingNavigation) {
+    console.log('[AI] Continuing after navigation:', pendingNav.navigationMessage);
+    // Open sidebar and continue conversation
+    if (!sidebarVisible) {
+      toggleSidebar();
+    }
+    setTimeout(() => {
+      if (apiKey) {
+        const summary = toolGetPageSummary();
+        const pagination = toolGetPaginationInfo();
+        const continuePrompt = `Navigation complete. Now on page ${pagination.currentPage}. Page summary: ${JSON.stringify(summary)}. Previous context: ${pendingNav.navigationMessage}. Briefly confirm the navigation and summarize what you see now.`;
+        processWithClaude(continuePrompt, true);
+      }
+    }, 1500);
+  } else if (!hasState || chatMessages.length === 0) {
+    // Send proactive greeting only if no history and no pending navigation
     setTimeout(() => {
       if (apiKey) {
         sendProactiveGreeting();
@@ -631,6 +785,8 @@ async function processWithClaude(userMessage, isSystem = false) {
   isProcessing = true;
   showTypingIndicator();
 
+  console.log('[AI] Processing message:', isSystem ? '(system)' : userMessage.substring(0, 100) + '...');
+
   try {
     // Build messages array
     const messages = [];
@@ -649,16 +805,21 @@ async function processWithClaude(userMessage, isSystem = false) {
       messages.push({ role: 'user', content: userMessage });
     }
 
+    console.log('[AI] Sending request with', messages.length, 'messages');
+
     // Call Claude API with tools
     let response = await callClaudeAPI(messages);
+    let toolCallCount = 0;
 
     // Handle tool use loop
     while (response.stop_reason === 'tool_use') {
+      toolCallCount++;
       const toolUseBlocks = response.content.filter(block => block.type === 'tool_use');
       const toolResults = [];
 
+      console.log(`[AI] Tool use round ${toolCallCount}:`, toolUseBlocks.map(t => t.name));
+
       for (const toolUse of toolUseBlocks) {
-        console.log('Executing tool:', toolUse.name, toolUse.input);
         const result = await executeToolCall(toolUse.name, toolUse.input);
         toolResults.push({
           type: 'tool_result',
@@ -679,12 +840,14 @@ async function processWithClaude(userMessage, isSystem = false) {
     const textBlocks = response.content.filter(block => block.type === 'text');
     const assistantMessage = textBlocks.map(b => b.text).join('\n');
 
+    console.log('[AI] Claude response:', assistantMessage);
+
     if (assistantMessage) {
       addMessage('assistant', assistantMessage);
     }
 
   } catch (error) {
-    console.error('Error processing with Claude:', error);
+    console.error('[AI] Error processing with Claude:', error);
     addSystemMessage(`Error: ${error.message}`);
   } finally {
     isProcessing = false;
@@ -693,6 +856,9 @@ async function processWithClaude(userMessage, isSystem = false) {
 }
 
 async function callClaudeAPI(messages) {
+  console.log('[AI] API Request - Messages:', messages.length, 'Model:', CLAUDE_MODEL);
+
+  const startTime = Date.now();
   const response = await fetch(CLAUDE_API_URL, {
     method: 'POST',
     headers: {
@@ -710,8 +876,12 @@ async function callClaudeAPI(messages) {
     })
   });
 
+  const elapsed = Date.now() - startTime;
+  console.log(`[AI] API Response - Status: ${response.status}, Time: ${elapsed}ms`);
+
   if (!response.ok) {
     const errorData = await response.json();
+    console.error('[AI] API Error:', errorData);
     const errorMessage = errorData.error?.message || 'API request failed';
 
     // Provide user-friendly error messages
@@ -730,7 +900,13 @@ async function callClaudeAPI(messages) {
     throw new Error(errorMessage);
   }
 
-  return await response.json();
+  const data = await response.json();
+  console.log('[AI] API Response data:', {
+    stop_reason: data.stop_reason,
+    content_types: data.content?.map(c => c.type),
+    usage: data.usage
+  });
+  return data;
 }
 
 // ============================================================================
@@ -738,32 +914,55 @@ async function callClaudeAPI(messages) {
 // ============================================================================
 
 async function executeToolCall(toolName, input) {
+  console.log(`[AI] Executing tool: ${toolName}`, input);
+  let result;
+
   switch (toolName) {
     case 'get_listings':
-      return toolGetListings();
+      result = toolGetListings();
+      break;
     case 'filter_listings':
-      return toolFilterListings(input);
+      result = toolFilterListings(input);
+      break;
     case 'get_listing_details':
-      return await toolGetListingDetails(input);
+      result = await toolGetListingDetails(input);
+      break;
     case 'highlight_listings':
-      return toolHighlightListings(input);
+      result = toolHighlightListings(input);
+      break;
     case 'open_listing':
-      return toolOpenListing(input);
+      result = toolOpenListing(input);
+      break;
     case 'show_all_listings':
-      return toolShowAllListings();
+      result = toolShowAllListings();
+      break;
     case 'get_page_summary':
-      return toolGetPageSummary();
+      result = toolGetPageSummary();
+      break;
     case 'get_pagination_info':
-      return toolGetPaginationInfo();
+      result = toolGetPaginationInfo();
+      break;
     case 'go_to_page':
-      return toolGoToPage(input);
+      result = toolGoToPage(input);
+      break;
     case 'next_page':
-      return toolNextPage();
+      result = toolNextPage();
+      break;
     case 'previous_page':
-      return toolPreviousPage();
+      result = toolPreviousPage();
+      break;
+    case 'set_search_filters':
+      result = toolSetSearchFilters(input);
+      break;
+    case 'get_available_filters':
+      result = toolGetAvailableFilters();
+      break;
     default:
-      return { error: `Unknown tool: ${toolName}` };
+      result = { error: `Unknown tool: ${toolName}` };
   }
+
+  console.log(`[AI] Tool result: ${toolName}`, result);
+  return result;
 }
 
 // Tool: Get all listings
@@ -989,6 +1188,7 @@ function toolGoToPage(input) {
     if (parseInt(text) === page) {
       // Save state before navigation
       saveState();
+      savePendingNavigation(`User asked to go to page ${page}`);
       window.location.href = link.href;
       return { navigating: true, toPage: page };
     }
@@ -1007,6 +1207,7 @@ function toolNextPage() {
 
   // Save state before navigation
   saveState();
+  savePendingNavigation('User asked to go to next page');
   window.location.href = nextLink.href;
   return { navigating: true, direction: 'next' };
 }
@@ -1021,8 +1222,218 @@ function toolPreviousPage() {
 
   // Save state before navigation
   saveState();
+  savePendingNavigation('User asked to go to previous page');
   window.location.href = prevLink.href;
   return { navigating: true, direction: 'previous' };
+}
+
+// Tool: Set search filters (native Idealista filters)
+function toolSetSearchFilters(input) {
+  console.log('[AI] Setting search filters:', input);
+
+  const form = document.getElementById('filter-form');
+  if (!form) {
+    return { error: 'Filter form not found' };
+  }
+
+  const appliedFilters = [];
+
+  // Price filters
+  if (input.min_price) {
+    const priceMinInput = form.querySelector('input[name="adfilter_pricemin"]');
+    if (priceMinInput) {
+      priceMinInput.value = input.min_price;
+      appliedFilters.push(`min_price: ${input.min_price}`);
+    }
+  }
+
+  if (input.max_price) {
+    const priceMaxInput = form.querySelector('input[name="adfilter_price"]');
+    if (priceMaxInput) {
+      priceMaxInput.value = input.max_price;
+      appliedFilters.push(`max_price: ${input.max_price}`);
+    }
+  }
+
+  // Size filters
+  if (input.min_size) {
+    const sizeMinInput = form.querySelector('input[name="adfilter_area"]');
+    if (sizeMinInput) {
+      sizeMinInput.value = input.min_size;
+      appliedFilters.push(`min_size: ${input.min_size}`);
+    }
+  }
+
+  if (input.max_size) {
+    const sizeMaxInput = form.querySelector('input[name="adfilter_areamax"]');
+    if (sizeMaxInput) {
+      sizeMaxInput.value = input.max_size;
+      appliedFilters.push(`max_size: ${input.max_size}`);
+    }
+  }
+
+  // Room filters
+  if (input.rooms && Array.isArray(input.rooms)) {
+    input.rooms.forEach(room => {
+      const roomCheckbox = form.querySelector(`input[name="adfilter_rooms_${room === 4 ? '4_more' : room}"]`);
+      if (roomCheckbox) {
+        roomCheckbox.checked = true;
+        appliedFilters.push(`rooms: ${room}`);
+      }
+    });
+  }
+
+  // Bathroom filters
+  if (input.bathrooms && Array.isArray(input.bathrooms)) {
+    input.bathrooms.forEach(bath => {
+      const bathCheckbox = form.querySelector(`input[name="adfilter_baths_${bath}"]`);
+      if (bathCheckbox) {
+        bathCheckbox.checked = true;
+        appliedFilters.push(`bathrooms: ${bath}`);
+      }
+    });
+  }
+
+  // Boolean filters mapping
+  const booleanFilters = {
+    pets_allowed: 'adfilter_housingpetsallowed',
+    air_conditioning: 'adfilter_hasairconditioning',
+    elevator: 'adfilter_lift',
+    terrace: 'adfilter_hasterrace',
+    balcony: 'adfilter_balcony',
+    parking: 'adfilter_parkingspace',
+    pool: 'adfilter_swimmingpool',
+    garden: 'adfilter_garden',
+    exterior: 'adfilter_flatlocation',
+    new_construction: 'adfilter_newconstruction',
+    good_condition: 'adfilter_goodcondition'
+  };
+
+  for (const [key, inputName] of Object.entries(booleanFilters)) {
+    if (input[key] === true) {
+      const checkbox = form.querySelector(`input[name="${inputName}"]`);
+      if (checkbox) {
+        checkbox.checked = true;
+        appliedFilters.push(key);
+      }
+    }
+  }
+
+  // Furnished filter (dropdown)
+  if (input.furnished === true) {
+    const amenityInput = form.querySelector('input[name="adfilter_amenity"]');
+    if (amenityInput) {
+      amenityInput.value = '3'; // Amueblado
+      appliedFilters.push('furnished');
+    }
+  }
+
+  if (appliedFilters.length === 0) {
+    return { error: 'No valid filters to apply' };
+  }
+
+  // Save state and navigate
+  saveState();
+  savePendingNavigation(`Applied filters: ${appliedFilters.join(', ')}`);
+
+  // Submit the form
+  console.log('[AI] Submitting filter form with:', appliedFilters);
+
+  // Trigger form submission by clicking the dropdowns to apply values, then navigate
+  // The filters are applied via URL parameters, so we need to build the URL
+  const url = buildFilterUrl(input);
+  if (url) {
+    window.location.href = url;
+    return { navigating: true, appliedFilters };
+  }
+
+  // Fallback: try triggering change events
+  form.querySelectorAll('input').forEach(input => {
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+
+  return { appliedFilters, note: 'Filters set, page should reload' };
+}
+
+function buildFilterUrl(filters) {
+  const currentUrl = new URL(window.location.href);
+  const searchParams = currentUrl.searchParams;
+
+  // Map our filter names to Idealista URL parameters
+  if (filters.max_price) searchParams.set('maxPrice', filters.max_price);
+  if (filters.min_price) searchParams.set('minPrice', filters.min_price);
+  if (filters.min_size) searchParams.set('minSize', filters.min_size);
+  if (filters.max_size) searchParams.set('maxSize', filters.max_size);
+
+  if (filters.pets_allowed) searchParams.set('petsAllowed', 'true');
+  if (filters.air_conditioning) searchParams.set('airConditioning', 'true');
+  if (filters.elevator) searchParams.set('lift', 'true');
+  if (filters.terrace) searchParams.set('terrace', 'true');
+  if (filters.parking) searchParams.set('garage', 'true');
+  if (filters.pool) searchParams.set('swimmingPool', 'true');
+  if (filters.garden) searchParams.set('garden', 'true');
+  if (filters.exterior) searchParams.set('exterior', 'true');
+  if (filters.furnished) searchParams.set('furnished', 'furnished');
+
+  return currentUrl.toString();
+}
+
+// Tool: Get available filters
+function toolGetAvailableFilters() {
+  const form = document.getElementById('filter-form');
+  if (!form) {
+    return { error: 'Filter form not found' };
+  }
+
+  const filters = {
+    price: {
+      min: form.querySelector('input[name="adfilter_pricemin"]')?.value || 'default',
+      max: form.querySelector('input[name="adfilter_price"]')?.value || 'default'
+    },
+    size: {
+      min: form.querySelector('input[name="adfilter_area"]')?.value || 'default',
+      max: form.querySelector('input[name="adfilter_areamax"]')?.value || 'default'
+    },
+    rooms: [],
+    bathrooms: [],
+    amenities: {}
+  };
+
+  // Get checked rooms
+  [0, 1, 2, 3, '4_more'].forEach(room => {
+    const checkbox = form.querySelector(`input[name="adfilter_rooms_${room}"]`);
+    if (checkbox?.checked) {
+      filters.rooms.push(room === '4_more' ? 4 : room);
+    }
+  });
+
+  // Get checked bathrooms
+  [1, 2, 3].forEach(bath => {
+    const checkbox = form.querySelector(`input[name="adfilter_baths_${bath}"]`);
+    if (checkbox?.checked) {
+      filters.bathrooms.push(bath);
+    }
+  });
+
+  // Get amenities
+  const amenities = {
+    pets_allowed: 'adfilter_housingpetsallowed',
+    air_conditioning: 'adfilter_hasairconditioning',
+    elevator: 'adfilter_lift',
+    terrace: 'adfilter_hasterrace',
+    parking: 'adfilter_parkingspace',
+    pool: 'adfilter_swimmingpool',
+    garden: 'adfilter_garden',
+    exterior: 'adfilter_flatlocation'
+  };
+
+  for (const [key, inputName] of Object.entries(amenities)) {
+    const checkbox = form.querySelector(`input[name="${inputName}"]`);
+    filters.amenities[key] = checkbox?.checked || false;
+  }
+
+  console.log('[AI] Current filters:', filters);
+  return filters;
 }
 
 // ============================================================================
