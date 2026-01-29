@@ -9,6 +9,7 @@ console.log('Idealista AI Assistant: Content script loaded');
 
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
 const CLAUDE_MODEL = 'claude-sonnet-4-20250514';
+const STORAGE_KEY = 'idealista-ai-assistant';
 
 const SYSTEM_PROMPT = `You are an AI assistant helping a user find a flat to rent on Idealista.com (Spanish real estate website).
 You have tools to interact with the property listings on the page.
@@ -21,6 +22,8 @@ Be proactive about pointing out:
 - Good deals (low price per m²)
 - Red flags (suspiciously low prices, missing info, few photos)
 - Properties that match their criteria well
+
+You can navigate between pages using the pagination tools. The user might ask you to search across multiple pages.
 
 Keep responses concise - users are browsing, not reading essays.
 Use Spanish for responses since this is a Spanish website, but understand English too.
@@ -44,7 +47,7 @@ const TOOLS = [
   },
   {
     name: 'filter_listings',
-    description: 'Show or hide listings based on criteria. Hidden listings are not deleted, just hidden from view.',
+    description: 'Show or hide listings based on criteria. Hidden listings are not deleted, just hidden from view. Filters are saved and persist across page navigation.',
     input_schema: {
       type: 'object',
       properties: {
@@ -143,6 +146,47 @@ const TOOLS = [
       properties: {},
       required: []
     }
+  },
+  {
+    name: 'get_pagination_info',
+    description: 'Get information about pagination: current page number, total pages, and available navigation options',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'go_to_page',
+    description: 'Navigate to a specific page number in the search results',
+    input_schema: {
+      type: 'object',
+      properties: {
+        page: {
+          type: 'number',
+          description: 'Page number to navigate to'
+        }
+      },
+      required: ['page']
+    }
+  },
+  {
+    name: 'next_page',
+    description: 'Navigate to the next page of search results',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'previous_page',
+    description: 'Navigate to the previous page of search results',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
   }
 ];
 
@@ -151,9 +195,59 @@ const TOOLS = [
 // ============================================================================
 
 let chatMessages = [];
+let currentFilters = {};
 let isProcessing = false;
 let apiKey = null;
 let sidebarVisible = false;
+
+// ============================================================================
+// PERSISTENT STORAGE
+// ============================================================================
+
+function getStorageKey() {
+  // Use search path as key so different searches have different histories
+  const path = window.location.pathname.replace(/pagina-\d+\.htm$/, '');
+  return `${STORAGE_KEY}-${path}`;
+}
+
+function saveState() {
+  try {
+    const state = {
+      chatMessages,
+      currentFilters,
+      sidebarVisible,
+      savedAt: Date.now()
+    };
+    localStorage.setItem(getStorageKey(), JSON.stringify(state));
+  } catch (e) {
+    console.error('Error saving state:', e);
+  }
+}
+
+function loadState() {
+  try {
+    const saved = localStorage.getItem(getStorageKey());
+    if (saved) {
+      const state = JSON.parse(saved);
+      // Only restore if saved within last 24 hours
+      if (Date.now() - state.savedAt < 24 * 60 * 60 * 1000) {
+        chatMessages = state.chatMessages || [];
+        currentFilters = state.currentFilters || {};
+        sidebarVisible = state.sidebarVisible || false;
+        return true;
+      }
+    }
+  } catch (e) {
+    console.error('Error loading state:', e);
+  }
+  return false;
+}
+
+function clearState() {
+  localStorage.removeItem(getStorageKey());
+  chatMessages = [];
+  currentFilters = {};
+}
 
 // ============================================================================
 // INITIALIZATION
@@ -171,15 +265,36 @@ async function init() {
   // Load API key
   await loadApiKey();
 
+  // Load saved state
+  const hasState = loadState();
+
   // Create chat UI
   createChatUI();
 
-  // Send proactive greeting after a short delay
-  setTimeout(() => {
-    if (apiKey) {
-      sendProactiveGreeting();
+  // Restore chat messages if any
+  if (hasState && chatMessages.length > 0) {
+    restoreChatMessages();
+    if (sidebarVisible) {
+      toggleSidebar();
     }
-  }, 1000);
+  }
+
+  // Add energy badges to all listings
+  addEnergyBadgesToListings();
+
+  // Apply saved filters
+  if (Object.keys(currentFilters).length > 0) {
+    applyFilters(currentFilters);
+  }
+
+  // Send proactive greeting only if no history
+  if (!hasState || chatMessages.length === 0) {
+    setTimeout(() => {
+      if (apiKey) {
+        sendProactiveGreeting();
+      }
+    }, 1000);
+  }
 }
 
 function detectPageType() {
@@ -197,6 +312,50 @@ async function loadApiKey() {
   } catch (error) {
     console.error('Error loading API key:', error);
   }
+}
+
+// ============================================================================
+// ENERGY BADGES
+// ============================================================================
+
+function addEnergyBadgesToListings() {
+  const listings = findPropertyListings();
+
+  for (const listing of listings) {
+    addEnergyBadge(listing);
+  }
+}
+
+function addEnergyBadge(listing) {
+  // Skip if badge already exists
+  if (listing.querySelector('.idealista-ai-badge')) return;
+
+  const data = extractPropertyData(listing);
+
+  // Ensure relative positioning for badge placement
+  listing.style.position = 'relative';
+
+  const badge = document.createElement('div');
+  badge.className = 'idealista-ai-badge';
+
+  // Owner type
+  const ownerIcon = data.ownerType === 'owner' ? '👤' : data.ownerType === 'agency' ? '🏢' : '❓';
+  const ownerLabel = data.ownerType === 'owner' ? 'Particular' : data.ownerType === 'agency' ? 'Agencia' : 'Desconocido';
+
+  // Energy rating colors
+  const energyColors = {
+    'A': '#00a651', 'B': '#50b848', 'C': '#bdd62e',
+    'D': '#fff200', 'E': '#fdb913', 'F': '#f37021', 'G': '#ed1c24'
+  };
+  const energyColor = energyColors[data.energyRating] || '#999';
+  const energyLabel = data.energyRating || 'N/A';
+
+  badge.innerHTML = `
+    <span class="badge-owner">${ownerIcon} ${ownerLabel}</span>
+    <span class="badge-energy" style="background: ${energyColor}">⚡${energyLabel}</span>
+  `;
+
+  listing.appendChild(badge);
 }
 
 // ============================================================================
@@ -218,7 +377,10 @@ function createChatUI() {
   sidebar.innerHTML = `
     <div class="ai-sidebar-header">
       <h3>AI Assistant</h3>
-      <button class="ai-close-btn" title="Close">&times;</button>
+      <div class="ai-header-buttons">
+        <button class="ai-clear-btn" title="Clear history">🗑️</button>
+        <button class="ai-close-btn" title="Close">&times;</button>
+      </div>
     </div>
     <div class="ai-messages" id="ai-messages"></div>
     <div class="ai-input-area">
@@ -232,6 +394,7 @@ function createChatUI() {
 
   // Event listeners
   sidebar.querySelector('.ai-close-btn').addEventListener('click', toggleSidebar);
+  sidebar.querySelector('.ai-clear-btn').addEventListener('click', handleClearHistory);
   document.getElementById('ai-send').addEventListener('click', handleSendMessage);
   document.getElementById('ai-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -254,6 +417,38 @@ function toggleSidebar() {
     sidebar.classList.remove('visible');
     toggle.classList.remove('hidden');
   }
+
+  saveState();
+}
+
+function restoreChatMessages() {
+  const messagesContainer = document.getElementById('ai-messages');
+
+  for (const msg of chatMessages) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `ai-message ai-message-${msg.role}`;
+
+    const formattedContent = msg.content
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n/g, '<br>');
+
+    messageDiv.innerHTML = formattedContent;
+    messagesContainer.appendChild(messageDiv);
+  }
+
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+function handleClearHistory() {
+  if (confirm('¿Borrar el historial de chat y los filtros guardados?')) {
+    clearState();
+    document.getElementById('ai-messages').innerHTML = '';
+    // Reset filters
+    toolShowAllListings();
+    // Refresh badges
+    document.querySelectorAll('.idealista-ai-badge').forEach(b => b.remove());
+    addEnergyBadgesToListings();
+  }
 }
 
 function addMessage(role, content) {
@@ -271,6 +466,7 @@ function addMessage(role, content) {
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
   chatMessages.push({ role, content });
+  saveState();
 }
 
 function addSystemMessage(content) {
@@ -322,7 +518,8 @@ async function sendProactiveGreeting() {
 
   // Get page summary for context
   const summary = toolGetPageSummary();
-  const greetingPrompt = `The user just loaded an Idealista search page. Here's what's on the page: ${JSON.stringify(summary)}. Give a brief, friendly greeting summarizing what you see and offer to help. Keep it to 2-3 sentences.`;
+  const pagination = toolGetPaginationInfo();
+  const greetingPrompt = `The user just loaded an Idealista search page. Here's what's on the page: ${JSON.stringify(summary)}. Pagination info: ${JSON.stringify(pagination)}. Give a brief, friendly greeting summarizing what you see and offer to help. Keep it to 2-3 sentences.`;
 
   await processWithClaude(greetingPrompt, true);
 }
@@ -453,6 +650,14 @@ async function executeToolCall(toolName, input) {
       return toolShowAllListings();
     case 'get_page_summary':
       return toolGetPageSummary();
+    case 'get_pagination_info':
+      return toolGetPaginationInfo();
+    case 'go_to_page':
+      return toolGoToPage(input);
+    case 'next_page':
+      return toolNextPage();
+    case 'previous_page':
+      return toolPreviousPage();
     default:
       return { error: `Unknown tool: ${toolName}` };
   }
@@ -466,6 +671,14 @@ function toolGetListings() {
 
 // Tool: Filter listings
 function toolFilterListings(input) {
+  // Save filters for persistence
+  currentFilters = { ...currentFilters, ...input };
+  saveState();
+
+  return applyFilters(input);
+}
+
+function applyFilters(input) {
   const listings = findPropertyListings();
   let hiddenCount = 0;
   let shownCount = 0;
@@ -517,7 +730,7 @@ function toolFilterListings(input) {
     }
   }
 
-  return { shown: shownCount, hidden: hiddenCount };
+  return { shown: shownCount, hidden: hiddenCount, filters: input };
 }
 
 // Tool: Get listing details
@@ -577,6 +790,10 @@ function toolShowAllListings() {
     listing.style.boxShadow = '';
   }
 
+  // Clear saved filters
+  currentFilters = {};
+  saveState();
+
   return { restored: listings.length };
 }
 
@@ -619,8 +836,94 @@ function toolGetPageSummary() {
   };
 }
 
+// Tool: Get pagination info
+function toolGetPaginationInfo() {
+  const paginationContainer = document.querySelector('.pagination');
+  if (!paginationContainer) {
+    return { error: 'No pagination found', currentPage: 1, totalPages: 1 };
+  }
+
+  // Current page
+  const selectedEl = paginationContainer.querySelector('li.selected span');
+  const currentPage = selectedEl ? parseInt(selectedEl.textContent) : 1;
+
+  // Get all page numbers
+  const pageLinks = paginationContainer.querySelectorAll('li:not(.prev):not(.next)');
+  const pages = [];
+  pageLinks.forEach(li => {
+    const text = li.textContent.trim();
+    const num = parseInt(text);
+    if (!isNaN(num)) pages.push(num);
+  });
+  const totalPages = pages.length > 0 ? Math.max(...pages) : 1;
+
+  // Check for prev/next
+  const hasPrev = paginationContainer.querySelector('li.prev a') !== null;
+  const hasNext = paginationContainer.querySelector('li.next a') !== null;
+
+  return {
+    currentPage,
+    totalPages,
+    hasPreviousPage: hasPrev,
+    hasNextPage: hasNext,
+    availablePages: pages
+  };
+}
+
+// Tool: Go to specific page
+function toolGoToPage(input) {
+  const { page } = input;
+  const paginationContainer = document.querySelector('.pagination');
+
+  if (!paginationContainer) {
+    return { error: 'No pagination found' };
+  }
+
+  // Find the link for the requested page
+  const pageLinks = paginationContainer.querySelectorAll('li a');
+  for (const link of pageLinks) {
+    const text = link.textContent.trim();
+    if (parseInt(text) === page) {
+      // Save state before navigation
+      saveState();
+      window.location.href = link.href;
+      return { navigating: true, toPage: page };
+    }
+  }
+
+  return { error: `Page ${page} not found in pagination` };
+}
+
+// Tool: Next page
+function toolNextPage() {
+  const nextLink = document.querySelector('.pagination li.next a');
+
+  if (!nextLink) {
+    return { error: 'No next page available' };
+  }
+
+  // Save state before navigation
+  saveState();
+  window.location.href = nextLink.href;
+  return { navigating: true, direction: 'next' };
+}
+
+// Tool: Previous page
+function toolPreviousPage() {
+  const prevLink = document.querySelector('.pagination li.prev a');
+
+  if (!prevLink) {
+    return { error: 'No previous page available' };
+  }
+
+  // Save state before navigation
+  saveState();
+  window.location.href = prevLink.href;
+  return { navigating: true, direction: 'previous' };
+}
+
 // ============================================================================
-// DOM HELPERS (preserved from original)
+// DOM HELPERS
 // ============================================================================
 
 function findPropertyListings() {
