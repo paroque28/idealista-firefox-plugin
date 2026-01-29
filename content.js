@@ -564,25 +564,36 @@ function updateBadgeEnergy(listingId, energyRating) {
 async function fetchMissingEnergyRatings(listings) {
   const toFetch = [];
 
+  console.log(`[AI] Checking ${listings.length} listings for missing energy ratings...`);
+  console.log(`[AI] Cache has ${Object.keys(listingDetailsCache).length} entries`);
+
   for (const listing of listings) {
     const data = extractPropertyData(listing);
     if (!data.id) continue;
 
-    // Skip if already cached
-    if (listingDetailsCache[data.id]) continue;
+    // Check if cached AND has valid energy rating
+    const cached = listingDetailsCache[data.id];
+    if (cached && cached.energyRating && cached.energyRating !== 'N/A') {
+      console.log(`[AI] Listing ${data.id}: cached with rating ${cached.energyRating}`);
+      continue;
+    }
 
     // Skip if already has energy rating from page
     if (data.energyRating) {
       listingDetailsCache[data.id] = { energyRating: data.energyRating };
+      console.log(`[AI] Listing ${data.id}: has page rating ${data.energyRating}`);
       continue;
     }
 
     toFetch.push({ id: data.id, listing });
   }
 
-  if (toFetch.length === 0) return;
+  if (toFetch.length === 0) {
+    console.log('[AI] No listings need energy rating fetch');
+    return;
+  }
 
-  console.log(`Fetching energy ratings for ${toFetch.length} listings...`);
+  console.log(`[AI] Fetching energy ratings for ${toFetch.length} listings...`);
 
   // Fetch in batches with delay to avoid rate limiting
   const BATCH_SIZE = 3;
@@ -590,16 +601,24 @@ async function fetchMissingEnergyRatings(listings) {
 
   for (let i = 0; i < toFetch.length; i += BATCH_SIZE) {
     const batch = toFetch.slice(i, i + BATCH_SIZE);
+    console.log(`[AI] Fetching batch ${Math.floor(i/BATCH_SIZE) + 1}:`, batch.map(b => b.id));
 
     await Promise.all(batch.map(async ({ id, listing }) => {
       try {
         const details = await toolGetListingDetails({ listing_id: id });
+        console.log(`[AI] Fetched ${id}:`, details?.energyRating || 'no rating', details?.error || '');
         if (details && !details.error) {
           listingDetailsCache[id] = details;
           updateBadgeEnergy(id, details.energyRating);
+        } else {
+          // Cache as N/A to avoid re-fetching
+          listingDetailsCache[id] = { energyRating: 'N/A' };
+          updateBadgeEnergy(id, 'N/A');
         }
       } catch (error) {
-        console.error(`Error fetching details for ${id}:`, error);
+        console.error(`[AI] Error fetching details for ${id}:`, error);
+        listingDetailsCache[id] = { energyRating: 'N/A' };
+        updateBadgeEnergy(id, 'N/A');
       }
     }));
 
@@ -612,7 +631,7 @@ async function fetchMissingEnergyRatings(listings) {
     }
   }
 
-  console.log('Finished fetching energy ratings');
+  console.log('[AI] Finished fetching energy ratings');
 }
 
 // ============================================================================
