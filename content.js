@@ -1562,7 +1562,10 @@ Escribe SOLO el mensaje, sin explicaciones.`;
   console.log('='.repeat(60));
 
   try {
-    const response = await fetch(CLAUDE_API_URL, {
+    // PRIMERA ITERACIÓN: Generar mensaje inicial
+    loadingText.textContent = 'Generando borrador...';
+
+    const response1 = await fetch(CLAUDE_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1577,17 +1580,71 @@ Escribe SOLO el mensaje, sin explicaciones.`;
       })
     });
 
-    if (!response.ok) {
+    if (!response1.ok) {
       throw new Error('API request failed');
     }
 
-    const data = await response.json();
-    const suggestedReply = data.content.find(b => b.type === 'text')?.text || '';
+    const data1 = await response1.json();
+    const firstDraft = data1.content.find(b => b.type === 'text')?.text?.trim() || '';
+
+    console.log('[AI] Primera iteración (borrador):', firstDraft);
+
+    // SEGUNDA ITERACIÓN: Revisar y humanizar
+    loadingText.textContent = 'Humanizando mensaje...';
+
+    const reviewPrompt = `Eres un experto en comunicación. Revisa este mensaje que alguien quiere enviar a un propietario para alquilar un piso.
+
+MENSAJE A REVISAR:
+"${firstDraft}"
+
+CONTEXTO:
+- Es un mensaje para alquilar un piso en España
+- ${rentalType === 'temporal' ? 'Es alquiler TEMPORAL - debe dar razón específica, NO mezclar con largo plazo' : rentalType === 'larga_estancia' ? 'Es alquiler de LARGA ESTANCIA - debe transmitir estabilidad' : 'Tipo de alquiler no claro'}
+
+EVALÚA:
+1. ¿Suena a mensaje generado por IA? (frases perfectas, demasiado formal, genérico, usa palabras como "solvencia", "documentación lista", estructuras repetitivas)
+2. ¿Comete el error de mezclar temporal y largo plazo?
+3. ¿Es demasiado largo o tiene información innecesaria?
+4. ¿Suena como escribiría una persona real por WhatsApp/chat?
+
+REESCRIBE el mensaje para que:
+- Suene 100% humano y natural, como un mensaje real de chat
+- Sea más conciso si es posible
+- Use lenguaje coloquial pero educado
+- NO use frases típicas de IA como "estaría encantado", "no dudes en", "quedo a tu disposición"
+- Mantenga la información importante pero de forma natural
+- Si es temporal, que la razón suene creíble y específica
+
+Responde SOLO con el mensaje mejorado, sin explicaciones.`;
+
+    const response2 = await fetch(CLAUDE_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 500,
+        messages: [{ role: 'user', content: reviewPrompt }]
+      })
+    });
+
+    if (!response2.ok) {
+      throw new Error('API request failed on review');
+    }
+
+    const data2 = await response2.json();
+    const finalReply = data2.content.find(b => b.type === 'text')?.text?.trim() || firstDraft;
+
+    console.log('[AI] Segunda iteración (humanizado):', finalReply);
 
     // Show result
     widget.querySelector('.ai-reply-loading').style.display = 'none';
     widget.querySelector('.ai-reply-result').style.display = 'block';
-    widget.querySelector('.ai-suggested-reply').textContent = suggestedReply.trim();
+    widget.querySelector('.ai-suggested-reply').textContent = finalReply;
 
   } catch (error) {
     console.error('[AI] Error generating reply:', error);
