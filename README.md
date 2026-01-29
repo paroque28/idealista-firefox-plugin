@@ -1,241 +1,178 @@
-# Idealista Firefox Plugin Helper
+# Idealista AI Assistant
 
-A Firefox WebExtension to enhance the Idealista.com property search experience with advanced filtering, AI-powered insights, and red flag detection.
+A Firefox extension that adds an AI-powered assistant to Idealista.com, helping you find the perfect flat using Claude.
 
-## 🎯 Features (Planned)
+## Features
 
-### 1. **Enhanced Filtering**
-- **Energy Rating Filter**: Filter properties by energy efficiency rating (A-G) directly from search results
-- **Advanced Search Criteria**: Additional filters not available in the default Idealista interface
-- **Custom Filter Combinations**: Save and reuse complex filter combinations
+- **Chat Sidebar**: Natural language interface to interact with listings
+- **Smart Filtering**: Ask Claude to filter by price, size, rooms, energy rating, or owner type
+- **Listing Analysis**: Get insights on deals, red flags, and recommendations
+- **Visual Highlighting**: Claude can highlight specific listings on the page
+- **Detailed Info**: Fetch energy ratings and advertiser details from listing pages
 
-### 2. **AI-Powered Features**
-- **Automatic Response Generation**: Create personalized inquiry messages using AI
-- **Smart Property Analysis**: AI-driven property evaluation and recommendations
-- **Intelligent Filtering**: ML-based filtering to match your preferences and priorities
+## Screenshot
 
-### 3. **Red Flags Detection**
-- **Scam Detection**: Identify suspicious listings with warning indicators
-- **Price Analysis**: Flag properties with unusual pricing
-- **Quality Assessment**: Detect low-quality or incomplete listings
+```
+┌────────────────────────────────────────────────────────────┐
+│                    Idealista Page                          │
+├────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────┐  ┌────────────────────────┐  │
+│  │    Listings Grid        │  │   Chat Sidebar         │  │
+│  │                         │  │                        │  │
+│  │  [Listing 1] [✓]        │  │  Claude: Found 30      │  │
+│  │  [Listing 2]            │  │  listings. 5 from      │  │
+│  │  [Listing 3] [hidden]   │  │  individuals...        │  │
+│  │                         │  │                        │  │
+│  │                         │  │  [User input...]       │  │
+│  └─────────────────────────┘  └────────────────────────┘  │
+└────────────────────────────────────────────────────────────┘
+```
 
-### 4. **Enhanced UX**
-- **Quick Property Insights**: View key metrics without opening individual listings
-- **Comparison Tools**: Compare multiple properties side-by-side
-- **Notes & Bookmarks**: Save notes and organize favorite properties
+## Installation
 
-## 📋 Current Status
+### 1. Install the Extension
 
-**Development Stage**: Planning & Architecture
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/paroque28/idealista-firefox-plugin.git
+   ```
 
-This project is currently in the initial planning phase. See [INFORMATION_NEEDED.md](INFORMATION_NEEDED.md) for required decisions and information to proceed with implementation.
+2. Open Firefox and navigate to `about:debugging#/runtime/this-firefox`
 
-## 🏗️ Architecture
+3. Click **"Load Temporary Add-on"**
 
-### Extension Structure
+4. Select the `manifest.json` file from the cloned directory
+
+### 2. Get Your Claude API Key
+
+1. **Create an Anthropic Account**
+   - Go to [console.anthropic.com](https://console.anthropic.com/)
+   - Sign up with email or Google
+   - Verify your email address
+
+2. **Add Credits**
+   - Navigate to **Settings** → **Billing**
+   - Add a payment method
+   - Purchase credits (API is pay-as-you-go)
+   - Cost: ~$3 per million input tokens, ~$15 per million output tokens
+
+3. **Generate an API Key**
+   - Go to **Settings** → **API Keys**
+   - Click **"Create Key"**
+   - Name it (e.g., "Idealista Extension")
+   - **Copy the key** - it starts with `sk-ant-api03-...`
+   - ⚠️ Save it somewhere safe - you won't see it again!
+
+### 3. Configure the Extension
+
+1. Click the extension icon in the Firefox toolbar
+2. Paste your API key in the input field
+3. Click **"Save API Key"**
+4. You should see "API key saved successfully!"
+
+## Usage
+
+1. **Navigate to Idealista**
+   - Go to any search page, e.g., [idealista.com/alquiler-viviendas/madrid/](https://www.idealista.com/alquiler-viviendas/madrid/)
+
+2. **Open the Assistant**
+   - Click the 🤖 button in the bottom-right corner
+   - The chat sidebar will slide in
+
+3. **Start Chatting**
+   - Claude will greet you with a summary of the listings
+   - Ask questions or give commands in natural language
+
+### Example Commands
+
+```
+"Show only apartments from individuals"
+"Hide everything over 1500€"
+"What's the cheapest option?"
+"Which listings have good energy ratings?"
+"Highlight the best deals"
+"Show me apartments with at least 2 rooms under 1200€"
+"Get details on listing 12345678"
+"Reset all filters"
+```
+
+## Tools Available to Claude
+
+| Tool | Description |
+|------|-------------|
+| `get_listings` | Get all listings with price, size, rooms, etc. |
+| `filter_listings` | Show/hide listings by criteria |
+| `get_listing_details` | Fetch detailed info from a listing page |
+| `highlight_listings` | Add visual glow to specific listings |
+| `open_listing` | Open a listing in a new tab |
+| `show_all_listings` | Reset filters and show everything |
+| `get_page_summary` | Get statistics about the current page |
+
+## File Structure
 
 ```
 idealista-firefox-plugin/
-├── manifest.json           # Extension configuration
-├── background.js          # Background service worker
-├── content.js             # Content script for Idealista pages
-├── content.css            # Styles for injected UI
-├── popup.html             # Extension popup UI
-├── popup.js               # Popup logic
-├── icons/                 # Extension icons
-├── lib/                   # Utility libraries
-│   ├── ai-integration.js  # AI API integration
-│   ├── data-scraper.js    # Property data extraction
-│   └── storage.js         # Data persistence utilities
-└── docs/                  # Additional documentation
+├── manifest.json      # Extension configuration
+├── content.js         # Chat UI + Claude client + tools
+├── content.css        # Sidebar styling
+├── background.js      # API key management
+├── popup.html         # API key configuration UI
+├── popup.js           # Popup logic
+├── popup.css          # Popup styling
+└── icons/             # Extension icons
 ```
 
-### Key Components
+## Privacy & Security
 
-1. **Content Script** (`content.js`)
-   - Injected into Idealista search pages
-   - Scrapes property data from listings
-   - Injects custom UI elements for filters
-   - Handles user interactions with added features
+- Your API key is stored locally in Firefox's sync storage
+- API calls go directly from your browser to Anthropic's servers
+- No data is sent to any third-party servers
+- Listing data stays in your browser
 
-2. **Background Script** (`background.js`)
-   - Manages extension state
-   - Handles API calls to AI services
-   - Coordinates data processing
-   - Manages caching and storage
+## Troubleshooting
 
-3. **Popup Interface** (`popup.html`, `popup.js`)
-   - User settings and preferences
-   - API key configuration
-   - Feature toggles
-   - Statistics and insights dashboard
+### "Please set your Claude API key"
+- Click the extension icon and add your API key
 
-## 🔧 Technology Stack
+### Chat not appearing
+- Make sure you're on an Idealista search page (URL contains `/alquiler-` or `/venta-`)
+- Try refreshing the page
 
-- **Firefox WebExtensions API** (Manifest V2)
-- **JavaScript** (ES6+)
-- **CSS3** for styling
-- **AI Integration** (TBD - OpenAI, Claude, or local models)
-- **Browser Storage API** for data persistence
+### API errors
+- Verify your API key is correct
+- Check you have credits in your Anthropic account
+- Ensure you're not hitting rate limits
 
-## 📚 References & Similar Projects
+### Listings not detected
+- The extension looks for `article.item` elements
+- Idealista may have changed their page structure
 
-### Firefox Extension Development
-- [MDN WebExtensions Documentation](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions)
-- [Firefox Extension Workshop](https://extensionworkshop.com/)
-- [WebExtensions Examples](https://github.com/mdn/webextensions-examples)
-
-### Similar Real Estate Enhancement Extensions
-- **Zillow Enhanced** - Example of real estate site enhancement
-- **Trulia Plus** - Additional filters for property search
-- **RealEstateHelper** - General property search tools
-
-### Content Script & Data Scraping Examples
-- [MDN Content Scripts Guide](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Content_scripts)
-- [web-scraping-examples](https://github.com/topics/web-scraping-javascript)
-
-### AI Integration in Browser Extensions
-- [OpenAI API Documentation](https://platform.openai.com/docs/api-reference)
-- [AI-powered browser extensions examples](https://github.com/topics/ai-browser-extension)
-- [ChatGPT API Integration Guides](https://platform.openai.com/docs/guides/gpt)
-
-### UI/UX Inspiration
-- [Extension UI Best Practices](https://extensionworkshop.com/documentation/develop/user-experience-best-practices/)
-- [Material Design for Extensions](https://material.io/design)
-
-## 🚀 Getting Started
+## Development
 
 ### Prerequisites
-- Firefox browser (version 78 or higher recommended)
-- Basic knowledge of JavaScript and web development
-- (Optional) API keys for AI services
+- Firefox 78+
+- Anthropic API key
 
-### Installation for Development
+### Local Development
+1. Make changes to the source files
+2. Go to `about:debugging#/runtime/this-firefox`
+3. Click **"Reload"** on the extension
+4. Refresh the Idealista page
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/paroque28/idealista-firefox-plugin.git
-   cd idealista-firefox-plugin
-   ```
+## Cost Estimation
 
-2. **Load the extension in Firefox**
-   - Open Firefox
-   - Navigate to `about:debugging#/runtime/this-firefox`
-   - Click "Load Temporary Add-on"
-   - Select the `manifest.json` file from this directory
+The extension uses Claude Sonnet. Typical usage:
+- Opening a page: ~500 tokens
+- Simple filter request: ~1000 tokens
+- Complex analysis: ~2000 tokens
 
-3. **Configure settings**
-   - Click the extension icon in the toolbar
-   - Enter any required API keys
-   - Configure your preferences
+At ~$3/million input tokens, expect to spend a few cents per session.
 
-### Development
+## License
 
-```bash
-# Watch for changes (if using build tools)
-npm run watch
+MIT
 
-# Run tests
-npm test
+## Acknowledgments
 
-# Package for distribution
-npm run build
-```
-
-## 📖 Documentation
-
-### Getting Started
-- **[Quick Start Guide](QUICKSTART.md)** - Get the plugin running in 5 minutes
-- **[Development Environment Setup](DEV_ENVIRONMENT.md)** - Complete dev environment with build tools
-
-### Planning & Design
-- **[Information Needed](INFORMATION_NEEDED.md)** - Required decisions for implementation
-- **[Feature Ideas](FEATURE_IDEAS.md)** - Suggested features and useful additions
-
-### Technical Guides
-- **[Data Storage Guide](DATA_STORAGE.md)** - How to store viewed listings, prices, and more
-- [Architecture Guide](docs/ARCHITECTURE.md) - Detailed technical architecture (TBD)
-- [API Documentation](docs/API.md) - API integration details (TBD)
-
-### Contributing
-- [Contributing Guide](CONTRIBUTING.md) - How to contribute (TBD)
-
-## 🛠️ Development Roadmap
-
-### Phase 1: Foundation (Current)
-- [x] Project structure setup
-- [x] Basic manifest configuration
-- [ ] Core documentation
-- [ ] Gather requirements (see INFORMATION_NEEDED.md)
-
-### Phase 2: Core Features
-- [ ] Basic content script injection
-- [ ] Property data scraping
-- [ ] Simple filter UI
-- [ ] Energy rating detection
-
-### Phase 3: AI Integration
-- [ ] AI provider integration
-- [ ] Automatic response generation
-- [ ] Smart filtering algorithms
-
-### Phase 4: Red Flags & Advanced Features
-- [ ] Scam detection algorithms
-- [ ] Price analysis
-- [ ] Quality scoring
-- [ ] Comparison tools
-
-### Phase 5: Polish & Release
-- [ ] Comprehensive testing
-- [ ] Performance optimization
-- [ ] Documentation completion
-- [ ] Firefox Add-ons store submission
-
-## 🤝 Contributing
-
-Contributions are welcome! Please read our contributing guidelines before submitting PRs.
-
-### How to Contribute
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-TBD - Please specify the license for this project.
-
-## ⚖️ Legal & Compliance
-
-**Important**: This extension is designed to enhance user experience while browsing Idealista. Users should:
-- Review Idealista's Terms of Service
-- Use the extension responsibly
-- Respect rate limits and website resources
-- Not use the extension for commercial scraping
-- Comply with GDPR and data protection regulations
-
-## 🐛 Known Issues & Limitations
-
-- Extension requires manual loading in Firefox (not yet published to store)
-- AI features require API keys (costs may apply)
-- Energy rating data requires visiting individual property pages
-- Performance depends on number of listings on page
-
-## 📞 Support
-
-For questions, issues, or feature requests:
-- Open an issue on GitHub
-- Contact: [Your contact information]
-
-## 🙏 Acknowledgments
-
-- Idealista.com for providing a great real estate search platform
-- Firefox WebExtensions community
-- All contributors and users
-
----
-
-**Status**: 🚧 In Development  
-**Version**: 0.1.0 (Planning Phase)  
-**Last Updated**: 2026-01-28
+- [Anthropic](https://anthropic.com) for Claude API
+- [Idealista](https://idealista.com) for the property search platform

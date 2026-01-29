@@ -15,7 +15,7 @@ body {
 }
 
 .popup-container {
-  width: 320px;
+  width: 340px;
   background: white;
 }
 
@@ -23,14 +23,14 @@ body {
 header {
   background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
   color: white;
-  padding: 20px;
+  padding: 16px 20px;
   text-align: center;
 }
 
 header h1 {
   font-size: 18px;
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 header .subtitle {
@@ -44,20 +44,20 @@ main {
 }
 
 section {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+}
+
+section:last-child {
+  margin-bottom: 0;
 }
 
 section h2 {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   color: #333;
-}
-
-.description {
-  font-size: 12px;
-  color: #666;
-  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 /* Input group */
@@ -100,8 +100,13 @@ section h2 {
   padding: 8px 12px;
   border-radius: 6px;
   font-size: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   text-align: center;
+  display: none;
+}
+
+.status:not(:empty) {
+  display: block;
 }
 
 .status-success {
@@ -157,25 +162,34 @@ section h2 {
 }
 
 /* Help section */
-.help-section {
+.help-section,
+.usage-section {
   background: #f8fafc;
   padding: 12px;
   border-radius: 8px;
   border: 1px solid #e2e8f0;
 }
 
-.help-section h2 {
+.help-section ol,
+.usage-section ol {
+  padding-left: 18px;
+  font-size: 12px;
+  color: #475569;
+  margin: 0;
+}
+
+.help-section li,
+.usage-section li {
   margin-bottom: 8px;
 }
 
-.help-section ol {
-  padding-left: 20px;
-  font-size: 12px;
-  color: #64748b;
+.help-section li:last-child,
+.usage-section li:last-child {
+  margin-bottom: 0;
 }
 
-.help-section li {
-  margin-bottom: 6px;
+.help-section strong {
+  color: #1e293b;
 }
 
 .help-section a {
@@ -187,6 +201,25 @@ section h2 {
   text-decoration: underline;
 }
 
+.help-section code {
+  background: #e2e8f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+}
+
+.cost-note {
+  margin-top: 10px;
+  margin-bottom: 0;
+  padding: 8px;
+  background: #dbeafe;
+  color: #1e40af;
+  border-radius: 4px;
+  font-size: 11px;
+  text-align: center;
+}
+
 /* Footer */
 footer {
   background: #f8fafc;
@@ -195,6 +228,15 @@ footer {
   font-size: 11px;
   color: #94a3b8;
   border-top: 1px solid #e2e8f0;
+}
+
+footer a {
+  color: #6366f1;
+  text-decoration: none;
+}
+
+footer a:hover {
+  text-decoration: underline;
 }
 
 /* Dark mode support */
@@ -212,10 +254,6 @@ footer {
     color: #e0e0e0;
   }
 
-  .description {
-    color: #a0a0a0;
-  }
-
   .input-group input {
     background: #3d3d3d;
     border-color: #4d4d4d;
@@ -231,15 +269,32 @@ footer {
   .btn-secondary {
     background: #3d3d3d;
     border-color: #6366f1;
+    color: #a5b4fc;
   }
 
-  .help-section {
+  .help-section,
+  .usage-section {
     background: #3d3d3d;
     border-color: #4d4d4d;
   }
 
-  .help-section ol {
+  .help-section ol,
+  .usage-section ol {
     color: #a0a0a0;
+  }
+
+  .help-section strong {
+    color: #e0e0e0;
+  }
+
+  .help-section code {
+    background: #4d4d4d;
+    color: #e0e0e0;
+  }
+
+  .cost-note {
+    background: #1e3a5f;
+    color: #93c5fd;
   }
 
   footer {
