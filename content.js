@@ -1654,33 +1654,47 @@ function parseDetailPageHTML(html, propertyId) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
 
-  // Energy rating
+  // Energy rating - look for icon-energy-c-X classes
   let energyConsumption = null;
   let energyEmissions = null;
 
-  const energySpans = doc.querySelectorAll('[class*="icon-energy-c-"]');
+  const energySpans = doc.querySelectorAll('[class*="icon-energy"]');
   energySpans.forEach(el => {
-    const match = el.className.match(/icon-energy-c-([a-g])/i);
-    if (match) {
-      if (!energyConsumption) energyConsumption = match[1].toUpperCase();
-      else if (!energyEmissions) energyEmissions = match[1].toUpperCase();
+    // Match icon-energy-c-a through icon-energy-c-g (consumption)
+    // or icon-energy-e-a through icon-energy-e-g (emissions)
+    const matchConsumption = el.className.match(/icon-energy-c-([a-g])/i);
+    const matchEmissions = el.className.match(/icon-energy-e-([a-g])/i);
+
+    if (matchConsumption) {
+      energyConsumption = matchConsumption[1].toUpperCase();
+    }
+    if (matchEmissions) {
+      energyEmissions = matchEmissions[1].toUpperCase();
     }
   });
 
   // Use worse rating
   const ENERGY_ORDER = { 'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7 };
-  let energyRating = energyConsumption;
+  let energyRating = energyConsumption || energyEmissions;
   if (energyConsumption && energyEmissions) {
     energyRating = ENERGY_ORDER[energyConsumption] >= ENERGY_ORDER[energyEmissions]
       ? energyConsumption : energyEmissions;
   }
 
-  // Check for special energy statuses
+  // Check for special energy statuses in the energy certificate section
   let energyStatus = null;
-  const energyText = doc.querySelector('.details-property_features')?.textContent || '';
-  if (energyText.toLowerCase().includes('en trámite')) energyStatus = 'pending';
-  else if (energyText.toLowerCase().includes('no indicado')) energyStatus = 'not_indicated';
-  else if (energyText.toLowerCase().includes('exento')) energyStatus = 'exempt';
+  const energySection = doc.querySelector('.details-property-feature-two');
+  const energyText = energySection?.textContent?.toLowerCase() || '';
+
+  if (energyText.includes('en trámite')) {
+    energyStatus = 'tramite';
+  } else if (energyText.includes('no indicado')) {
+    energyStatus = 'N/I';
+  } else if (energyText.includes('exento')) {
+    energyStatus = 'exento';
+  }
+
+  console.log(`[AI] Parsed energy for ${propertyId}: rating=${energyRating}, status=${energyStatus}, consumption=${energyConsumption}, emissions=${energyEmissions}`);
 
   // Advertiser info
   const advertiserName = doc.querySelector('.advertiser-name')?.textContent?.trim() ||
@@ -1705,9 +1719,12 @@ function parseDetailPageHTML(html, propertyId) {
   const sizeMatch = doc.body.textContent.match(/(\d+)\s*m²/);
   const size = sizeMatch ? parseInt(sizeMatch[1]) : null;
 
+  // Use actual rating if available, otherwise use status
+  const finalEnergyRating = energyRating || energyStatus || null;
+
   return {
     id: propertyId,
-    energyRating: energyRating || energyStatus,
+    energyRating: finalEnergyRating,
     energyConsumption,
     energyEmissions,
     energyStatus,
