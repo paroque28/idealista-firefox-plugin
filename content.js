@@ -39,7 +39,9 @@ Important notes:
 - Prices are in EUR (€)
 - Sizes are in square meters (m²)
 - Energy ratings go from A (best) to G (worst)
-- "Particular" means individual owner, "Agencia" means real estate agency`;
+- "Particular" means individual owner, "Agencia" means real estate agency
+
+**Energy Certificates**: Many listings have invalid energy certificates (en trámite, no indicado, exento). When greeting the user, if there are listings without valid A-G ratings, mention how many and ask if they want to hide them using filter_listings with require_energy_cert: true.`;
 
 // Tool definitions for Claude
 const TOOLS = [
@@ -79,6 +81,10 @@ const TOOLS = [
           type: 'string',
           enum: ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
           description: 'Minimum energy rating (A is best, G is worst)'
+        },
+        require_energy_cert: {
+          type: 'boolean',
+          description: 'If true, hide listings without valid energy certification (hides: en trámite, no indicado, exento, N/A)'
         },
         listing_ids: {
           type: 'array',
@@ -763,7 +769,8 @@ function updateActiveFiltersDisplay() {
     min_size: { label: 'Tamaño mín', suffix: 'm²' },
     max_size: { label: 'Tamaño máx', suffix: 'm²' },
     min_rooms: { label: 'Hab. mín' },
-    min_energy_rating: { label: 'Energía mín' }
+    min_energy_rating: { label: 'Energía mín' },
+    require_energy_cert: { label: 'Cert. energético', values: { true: 'Requerido' } }
   };
 
   const activeFilters = Object.entries(currentFilters)
@@ -890,11 +897,15 @@ async function sendProactiveGreeting() {
   const pagination = toolGetPaginationInfo();
   const greetingPrompt = `The user just loaded an Idealista search page. Here's what's on the page: ${JSON.stringify(summary)}. Pagination info: ${JSON.stringify(pagination)}.
 
-Give a brief, friendly greeting summarizing what you see (2-3 sentences). Then add a short section with example commands they can try, including:
-- Basic filters: "Solo particulares", "Máximo 1200€"
-- AI filters (mention these are special): "Busca pisos luminosos", "Encuentra pisos tranquilos sin ruido", "Muestra solo reformados"
+Give a brief, friendly greeting summarizing what you see (2-3 sentences).
 
-Format the examples nicely so they're easy to copy.`;
+${summary.withoutValidEnergyCert > 0 ? `IMPORTANT: There are ${summary.withoutValidEnergyCert} listings without valid energy certification (en trámite, no indicado, etc.). Ask the user if they want to hide these listings. If they say yes, use filter_listings with require_energy_cert: true.` : ''}
+
+Then add a short section with example commands they can try:
+- Basic: "Solo particulares", "Máximo 1200€"
+- AI filters: "Busca pisos luminosos", "Encuentra pisos tranquilos"
+
+Keep it concise.`;
 
   await processWithClaude(greetingPrompt, true);
 }
@@ -1144,6 +1155,19 @@ function applyFilters(input) {
           shouldHide = true;
         }
       }
+
+      // Filter by valid energy certification
+      if (input.require_energy_cert) {
+        // Get cached energy rating
+        const cached = listingDetailsCache[data.id];
+        const energyRating = cached?.energyRating || data.energyRating;
+
+        // Invalid ratings: null, N/A, N/I, tramite, exento, or anything not A-G
+        const validRatings = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+        if (!energyRating || !validRatings.includes(energyRating)) {
+          shouldHide = true;
+        }
+      }
     }
 
     if (shouldHide) {
@@ -1225,18 +1249,32 @@ function toolShowAllListings() {
 // Tool: Get page summary
 function toolGetPageSummary() {
   const listings = findPropertyListings();
-  const data = listings.map(el => extractPropertyData(el));
+  const data = listings.map(el => {
+    const basicData = extractPropertyData(el);
+    // Include cached energy rating if available
+    const cached = listingDetailsCache[basicData.id];
+    if (cached?.energyRating) {
+      basicData.energyRating = cached.energyRating;
+    }
+    return basicData;
+  });
 
   const prices = data.filter(d => d.price).map(d => d.price);
   const sizes = data.filter(d => d.size).map(d => d.size);
 
   const byOwnerType = { owner: 0, agency: 0, unknown: 0 };
   const byEnergyRating = {};
+  const validRatings = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+  let withoutValidEnergyCert = 0;
 
   for (const d of data) {
     byOwnerType[d.ownerType] = (byOwnerType[d.ownerType] || 0) + 1;
     if (d.energyRating) {
       byEnergyRating[d.energyRating] = (byEnergyRating[d.energyRating] || 0) + 1;
+    }
+    // Count listings without valid A-G rating
+    if (!d.energyRating || !validRatings.includes(d.energyRating)) {
+      withoutValidEnergyCert++;
     }
   }
 
@@ -1257,7 +1295,8 @@ function toolGetPageSummary() {
       avg: Math.round(sizes.reduce((a, b) => a + b, 0) / sizes.length)
     } : null,
     byOwnerType,
-    byEnergyRating
+    byEnergyRating,
+    withoutValidEnergyCert
   };
 }
 
