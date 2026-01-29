@@ -25,6 +25,13 @@ Be proactive about pointing out:
 
 You can navigate between pages using the pagination tools. The user might ask you to search across multiple pages.
 
+**AI Filtering**: You have a special ability to filter listings based on subjective criteria by reading their full descriptions. Use get_all_listings_details to fetch descriptions, then analyze them and use filter_listings with listing_ids to show only the ones that match. Examples:
+- "pisos luminosos" - look for mentions of light, windows, orientation
+- "sin ruido" - avoid ground floors, busy streets
+- "bien comunicado" - check for metro/bus mentions
+- "reformado recientemente" - look for renovation mentions
+- "cocina equipada" - check kitchen appliances
+
 Keep responses concise - users are browsing, not reading essays.
 Use Spanish for responses since this is a Spanish website, but understand English too.
 
@@ -277,6 +284,21 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'get_all_listings_details',
+    description: 'Fetch detailed information (including full descriptions) for ALL visible listings on the page. Use this for AI-powered filtering based on subjective criteria like "luminoso", "tranquilo", "reformado", etc. Returns an array with id, title, price, size, description, and features for each listing. After analyzing, use filter_listings with listing_ids to show only matching ones.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        include_hidden: {
+          type: 'boolean',
+          description: 'Include hidden listings too (default: false)',
+          default: false
+        }
+      },
       required: []
     }
   }
@@ -866,7 +888,13 @@ async function sendProactiveGreeting() {
   // Get page summary for context
   const summary = toolGetPageSummary();
   const pagination = toolGetPaginationInfo();
-  const greetingPrompt = `The user just loaded an Idealista search page. Here's what's on the page: ${JSON.stringify(summary)}. Pagination info: ${JSON.stringify(pagination)}. Give a brief, friendly greeting summarizing what you see and offer to help. Keep it to 2-3 sentences.`;
+  const greetingPrompt = `The user just loaded an Idealista search page. Here's what's on the page: ${JSON.stringify(summary)}. Pagination info: ${JSON.stringify(pagination)}.
+
+Give a brief, friendly greeting summarizing what you see (2-3 sentences). Then add a short section with example commands they can try, including:
+- Basic filters: "Solo particulares", "Máximo 1200€"
+- AI filters (mention these are special): "Busca pisos luminosos", "Encuentra pisos tranquilos sin ruido", "Muestra solo reformados"
+
+Format the examples nicely so they're easy to copy.`;
 
   await processWithClaude(greetingPrompt, true);
 }
@@ -1046,6 +1074,9 @@ async function executeToolCall(toolName, input) {
       break;
     case 'get_available_filters':
       result = toolGetAvailableFilters();
+      break;
+    case 'get_all_listings_details':
+      result = await toolGetAllListingsDetails(input);
       break;
     default:
       result = { error: `Unknown tool: ${toolName}` };
@@ -1526,6 +1557,90 @@ function toolGetAvailableFilters() {
 
   console.log('[AI] Current filters:', filters);
   return filters;
+}
+
+// Tool: Get all listings with details (for AI filtering)
+async function toolGetAllListingsDetails(input = {}) {
+  const { include_hidden = false } = input;
+  const listings = findPropertyListings();
+
+  // Filter to visible only if requested
+  const targetListings = include_hidden
+    ? listings
+    : listings.filter(l => l.style.display !== 'none');
+
+  console.log(`[AI] Fetching details for ${targetListings.length} listings...`);
+
+  // Show progress message
+  addSystemMessage(`Analizando ${targetListings.length} anuncios... Esto puede tardar unos segundos.`);
+
+  const results = [];
+  const BATCH_SIZE = 5;
+  const DELAY_MS = 300;
+
+  for (let i = 0; i < targetListings.length; i += BATCH_SIZE) {
+    const batch = targetListings.slice(i, i + BATCH_SIZE);
+
+    const batchResults = await Promise.all(batch.map(async (listing) => {
+      const basicData = extractPropertyData(listing);
+
+      // Check cache first
+      if (listingDetailsCache[basicData.id]?.description) {
+        console.log(`[AI] Using cached details for ${basicData.id}`);
+        return {
+          ...basicData,
+          ...listingDetailsCache[basicData.id]
+        };
+      }
+
+      // Fetch details
+      try {
+        const details = await toolGetListingDetails({ listing_id: basicData.id });
+        if (details && !details.error) {
+          // Update cache
+          listingDetailsCache[basicData.id] = details;
+          saveDetailsCache();
+          return {
+            ...basicData,
+            ...details
+          };
+        }
+      } catch (error) {
+        console.error(`[AI] Error fetching details for ${basicData.id}:`, error);
+      }
+
+      return basicData;
+    }));
+
+    results.push(...batchResults);
+
+    // Delay between batches
+    if (i + BATCH_SIZE < targetListings.length) {
+      await new Promise(resolve => setTimeout(resolve, DELAY_MS));
+    }
+  }
+
+  // Remove progress message
+  const messages = document.getElementById('ai-messages');
+  const systemMsgs = messages?.querySelectorAll('.ai-message-system');
+  if (systemMsgs?.length > 0) {
+    systemMsgs[systemMsgs.length - 1].remove();
+  }
+
+  console.log(`[AI] Fetched details for ${results.length} listings`);
+
+  // Return simplified data for Claude to analyze
+  return results.map(r => ({
+    id: r.id,
+    title: r.title,
+    price: r.price,
+    size: r.size,
+    rooms: r.rooms,
+    energyRating: r.energyRating,
+    ownerType: r.ownerType,
+    description: r.description || 'No description available',
+    advertiserType: r.advertiserType
+  }));
 }
 
 // ============================================================================
