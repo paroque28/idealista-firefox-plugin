@@ -1084,6 +1084,7 @@ function createConversationsWidget() {
         <span class="ai-reply-status-text">Esperando conversación...</span>
       </div>
       <div class="ai-reply-options" style="display: none;">
+        <div class="ai-reply-detected" id="ai-rental-type-indicator"></div>
         <div class="ai-reply-tone">
           <label>Estilo:</label>
           <select id="ai-reply-tone-select">
@@ -1187,7 +1188,31 @@ function checkForActiveConversation() {
     widget.querySelector('.ai-reply-options').style.display = 'block';
     widget.querySelector('.ai-reply-loading').style.display = 'none';
 
+    // Show detected rental type
+    const indicator = widget.querySelector('#ai-rental-type-indicator');
+    if (indicator) {
+      const allText = `${conversationContext.propertyDescription || ''} ${conversationContext.messages.map(m => m.content).join(' ')}`.toLowerCase();
+
+      let typeLabel = '';
+      let typeClass = '';
+
+      if (/(\d+)\s*(to|a|[-–])\s*(\d+)\s*month|flexible\s*stay|temporal|temporada|short[\s-]*term|meses/i.test(allText)) {
+        typeLabel = '📅 TEMPORAL detectado';
+        typeClass = 'temporal';
+      } else if (/larga\s*(estancia|duraci)|residencia\s*habitual|long[\s-]*term|indefinido/i.test(allText)) {
+        typeLabel = '🏠 LARGA ESTANCIA detectado';
+        typeClass = 'larga';
+      } else {
+        typeLabel = '❓ Tipo no detectado';
+        typeClass = 'unknown';
+      }
+
+      indicator.textContent = typeLabel;
+      indicator.className = `ai-reply-detected ai-rental-${typeClass}`;
+    }
+
     console.log('[AI] Active conversation detected:', conversationContext.messages.length, 'messages');
+    console.log('[AI] Property description:', conversationContext.propertyDescription?.substring(0, 200));
   } else {
     widget.querySelector('.ai-reply-status').style.display = 'block';
     widget.querySelector('.ai-reply-status-text').textContent = 'Selecciona una conversación...';
@@ -1267,20 +1292,57 @@ function extractConversationContext() {
     };
   }
 
-  // Extract property description from the page or linked listing
+  // Extract property description from multiple sources
   const descriptionSelectors = [
     '.ad-description',
     '[class*="description"]',
     '.comment p',
-    '[class*="detail-text"]'
+    '[class*="detail-text"]',
+    '[class*="ad-content"]',
+    '[class*="property-description"]'
   ];
 
   for (const selector of descriptionSelectors) {
     const descEl = document.querySelector(selector);
-    if (descEl?.textContent?.trim()) {
+    if (descEl?.textContent?.trim() && descEl.textContent.trim().length > 50) {
       context.propertyDescription = descEl.textContent.trim();
       break;
     }
+  }
+
+  // Also look for property description in the conversation messages themselves
+  // Often the first message contains the listing description
+  if (!context.propertyDescription || context.propertyDescription.length < 50) {
+    // Check if any message contains what looks like a property description
+    const allMessageText = Array.from(messageElements).map(el => el.textContent?.trim()).join(' ');
+
+    // Look for typical listing patterns
+    const listingPatterns = [
+      /flexible\s*stay[^.]*\./i,
+      /(\d+)\s*(to|a)\s*(\d+)\s*months?[^.]*\./i,
+      /minimum\s*stay[^.]*\./i,
+      /available\s*(from|in)[^.]*\./i,
+      /alquiler\s*temporal[^.]*\./i,
+      /(\d+)\s*€.*m[²2]/i
+    ];
+
+    for (const pattern of listingPatterns) {
+      const match = allMessageText.match(pattern);
+      if (match) {
+        // Get surrounding context (100 chars before and after)
+        const index = allMessageText.indexOf(match[0]);
+        const start = Math.max(0, index - 100);
+        const end = Math.min(allMessageText.length, index + match[0].length + 100);
+        const excerpt = allMessageText.substring(start, end);
+        context.propertyDescription = (context.propertyDescription || '') + ' ' + excerpt;
+        break;
+      }
+    }
+  }
+
+  // Clean up description
+  if (context.propertyDescription) {
+    context.propertyDescription = context.propertyDescription.substring(0, 1000);
   }
 
   // Look for property requirements in the conversation or description
@@ -1388,48 +1450,116 @@ async function generateConversationReply() {
 
   const marketContext = getMarketContext();
 
-  // Detect rental type for context
-  let rentalTypeHint = '';
-  if (context.rentalType === 'temporal') {
-    rentalTypeHint = 'TIPO DE ALQUILER DETECTADO: TEMPORAL (por meses/temporada)';
-  } else if (context.rentalType === 'larga_estancia') {
-    rentalTypeHint = 'TIPO DE ALQUILER DETECTADO: LARGA ESTANCIA (residencia habitual)';
+  // Detect rental type from description - be thorough
+  let rentalType = context.rentalType;
+  const allText = `${context.propertyDescription || ''} ${conversationHistory}`.toLowerCase();
+
+  // Check for temporal indicators
+  const temporalPatterns = [
+    /(\d+)\s*(to|a|[-–])\s*(\d+)\s*month/i,
+    /flexible\s*stay/i,
+    /temporary|temporal|temporada/i,
+    /short[\s-]*term/i,
+    /(\d+)\s*meses/i,
+    /estancia\s*(corta|flexible)/i,
+    /minimum\s*stay.*month/i,
+    /from.*to.*month/i
+  ];
+
+  const longTermPatterns = [
+    /larga\s*(estancia|duraci|temporada)/i,
+    /residencia\s*habitual/i,
+    /long[\s-]*term/i,
+    /indefinido/i,
+    /vivienda\s*habitual/i
+  ];
+
+  if (temporalPatterns.some(p => p.test(allText))) {
+    rentalType = 'temporal';
+  } else if (longTermPatterns.some(p => p.test(allText))) {
+    rentalType = 'larga_estancia';
   }
 
-  const prompt = `Eres un experto en redactar mensajes persuasivos para alquilar pisos. Tu objetivo es ayudar al usuario a CONVENCER al propietario de que es el inquilino ideal.
+  // Extract duration if temporal
+  let durationInfo = '';
+  const durationMatch = allText.match(/(\d+)\s*(to|a|[-–])\s*(\d+)\s*month/i) ||
+                        allText.match(/(\d+)\s*meses/i) ||
+                        allText.match(/minimum[:\s]*(\d+)\s*month/i);
+  if (durationMatch) {
+    durationInfo = `Duración mencionada: ${durationMatch[0]}`;
+  }
 
-${marketContext ? `CONTEXTO DEL MERCADO (instrucciones del usuario):\n${marketContext}\n` : ''}
-${rentalTypeHint}
+  // Build rental type instruction - VERY STRICT
+  let rentalTypeInstruction = '';
+  if (rentalType === 'temporal') {
+    rentalTypeInstruction = `
+⚠️⚠️⚠️ ALQUILER TEMPORAL DETECTADO ⚠️⚠️⚠️
+${durationInfo}
 
-INFORMACIÓN DEL USUARIO (inquilino):
-${profileContext || 'No hay perfil configurado - asume un perfil profesional y responsable'}
+REGLAS OBLIGATORIAS PARA TEMPORAL:
+1. DEBES dar UNA razón específica y demostrable: "proyecto laboral de X meses", "máster/estudios de X meses", "tratamiento médico", "reforma en mi vivienda habitual"
+2. DEBES mencionar fechas concretas que encajen con lo que pide el anuncio
+3. PROHIBIDO decir "temporal o largo plazo" - eso es RED FLAG
+4. PROHIBIDO decir "lo que esté disponible" - demuestra que no tienes razón real
+5. PROHIBIDO mencionar que podrías quedarte más tiempo
+6. SÍ menciona que tu situación encaja perfectamente con la duración que ofrecen`;
+  } else if (rentalType === 'larga_estancia') {
+    rentalTypeInstruction = `
+ALQUILER LARGA ESTANCIA DETECTADO
+
+REGLAS OBLIGATORIAS:
+1. Enfatiza que buscas tu hogar estable, donde quedarte años
+2. Menciona arraigo: trabajo fijo en la ciudad, vida establecida
+3. PROHIBIDO mencionar que podría ser temporal
+4. PROHIBIDO dar a entender flexibilidad sobre la duración`;
+  }
+
+  const prompt = `Eres un experto en redactar mensajes persuasivos para alquilar pisos en España.
+
+${marketContext ? `CONTEXTO DEL MERCADO:\n${marketContext}\n` : ''}
+${rentalTypeInstruction}
+
+INFORMACIÓN DEL USUARIO:
+${profileContext || 'No hay perfil configurado'}
 
 INFORMACIÓN DEL INMUEBLE:
-- Datos básicos: ${context.propertyInfo ? JSON.stringify(context.propertyInfo) : 'No disponible'}
-- Descripción: ${context.propertyDescription || 'No disponible'}
-- Requisitos detectados: ${context.propertyRequirements.length > 0 ? context.propertyRequirements.join(', ') : 'No especificados'}
-- Nombre del propietario: ${context.otherPartyName || 'No disponible'}
+- Datos: ${context.propertyInfo ? JSON.stringify(context.propertyInfo) : 'No disponible'}
+- Descripción del anuncio: "${context.propertyDescription || 'No disponible'}"
+- Requisitos: ${context.propertyRequirements.length > 0 ? context.propertyRequirements.join(', ') : 'No especificados'}
 
-CONVERSACIÓN ACTUAL:
+CONVERSACIÓN:
 ${conversationHistory}
 
-TONO DESEADO: ${tone === 'professional' ? 'Profesional, serio y confiable - transmite estabilidad' : tone === 'friendly' ? 'Cercano y simpático - cae bien desde el primer mensaje' : tone === 'formal' ? 'Muy formal y educado - máximo respeto' : tone === 'enthusiastic' ? 'Entusiasta y positivo - muestra que realmente te encanta el piso' : 'Directo y breve - va al grano sin rodeos'}
+TONO: ${tone === 'professional' ? 'Profesional y confiable' : tone === 'friendly' ? 'Cercano y simpático' : tone === 'formal' ? 'Muy formal' : tone === 'enthusiastic' ? 'Entusiasta' : 'Directo y breve'}
 
-ESTRATEGIA DE PERSUASIÓN:
-1. **Cumple las condiciones**: ASUME que el usuario cumple TODAS las condiciones del piso. NO preguntes si las cumple.
-2. **Genera confianza**: Menciona datos que den seguridad al propietario.
-3. **Muestra interés genuino**: Haz referencia a algo específico del piso o la descripción.
-4. **Diferénciate**: Sé específico y memorable, no genérico.
-5. **Facilita el siguiente paso**: Sugiere visita o llamada, muestra disponibilidad.
+INSTRUCCIONES:
+1. Lee la descripción del anuncio y adapta tu respuesta a lo que pide
+2. ASUME que cumples las condiciones - no preguntes
+3. Si es TEMPORAL: da razón específica que encaje con la duración del anuncio
+4. Menciona algo específico del piso que te guste
+5. ${tone === 'brief' ? 'Máximo 3 líneas' : 'Máximo 5 líneas'}
+6. No repitas saludos si ya se saludaron
 
-REGLAS:
-- Responde a lo que preguntó/dijo el propietario
-- Si pide documentación, confirma que la tienes lista
-- ${tone === 'brief' ? 'Máximo 2-3 líneas, directo al grano' : tone === 'enthusiastic' ? 'Puedes ser más expresivo, hasta 6-7 líneas' : 'Largo apropiado, 4-5 líneas'}
-- NO incluir saludos si ya se saludaron
-- NO sonar desesperado ni robótico
+Escribe SOLO el mensaje, sin explicaciones.`;
 
-Escribe SOLO el mensaje sugerido, sin explicaciones ni comillas.`;
+  // DEBUGGING - Log everything so user can see what's happening
+  console.log('='.repeat(60));
+  console.log('[AI] GENERANDO RESPUESTA - DEBUG INFO:');
+  console.log('='.repeat(60));
+  console.log('[AI] Tipo de alquiler detectado:', rentalType || 'NO DETECTADO');
+  console.log('[AI] Duración encontrada:', durationInfo || 'NO ENCONTRADA');
+  console.log('[AI] Descripción del piso:', context.propertyDescription?.substring(0, 300) || 'NO ENCONTRADA');
+  console.log('[AI] Requisitos detectados:', context.propertyRequirements);
+  console.log('[AI] Info del inmueble:', context.propertyInfo);
+  console.log('[AI] Mensajes en conversación:', context.messages.length);
+  console.log('[AI] Historial conversación:', conversationHistory);
+  console.log('[AI] Perfil del usuario:', profileContext?.substring(0, 200) || 'NO CONFIGURADO');
+  console.log('[AI] Contexto de mercado configurado:', marketContext ? 'SÍ (' + marketContext.length + ' chars)' : 'NO');
+  console.log('[AI] Instrucción de tipo alquiler:', rentalTypeInstruction || 'NINGUNA');
+  console.log('='.repeat(60));
+  console.log('[AI] PROMPT COMPLETO:');
+  console.log(prompt);
+  console.log('='.repeat(60));
 
   try {
     const response = await fetch(CLAUDE_API_URL, {
